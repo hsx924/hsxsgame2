@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灰烬之路 IV · 卡牌Roguelike</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root{
+    --gold:#c9a227; --gold-hi:#e7c65a; --blood:#b03a2e; --steel:#7d8a99;
+    --ink:#d6d2c4; --dim:#8a8577; --panel:#14161d; --line:#2a2d38;
+    --atk:#c96a5a; --def:#6f8ea8; --skill:#9a6ac9; --heal:#7fa86f; --frost:#7ab3c9;
+  }
+  body {
+    background:
+      radial-gradient(ellipse 80% 55% at 50% -10%, rgba(120,30,20,.24), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 85% 110%, rgba(40,50,80,.18), transparent 60%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 6px),
+      #0b0c10;
+    color:var(--ink);
+    font-family:"Noto Serif SC","Source Han Serif SC",Georgia,serif;
+    min-height:100vh; user-select:none; overflow-x:hidden;
+  }
+  .screen { display:none; max-width:1120px; margin:0 auto; padding:24px 16px 60px; }
+  .screen.active { display:block; animation:fadeIn .35s ease; }
+  @keyframes fadeIn { from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+  h1 { font-size:38px; letter-spacing:10px; color:var(--gold); text-align:center; margin:40px 0 6px;
+       text-shadow:0 0 26px rgba(201,162,39,.28); }
+  .subtitle { text-align:center; color:var(--dim); letter-spacing:4px; margin-bottom:34px; font-size:14px; }
+  .panel {
+    background:linear-gradient(180deg,#171a22,#12141b);
+    border:1px solid var(--line); border-radius:6px; padding:18px 20px; margin-bottom:14px;
+    box-shadow:0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    position:relative;
+  }
+  .panel::before{ content:""; position:absolute; top:0; left:12px; right:12px; height:1px;
+    background:linear-gradient(90deg,transparent,rgba(201,162,39,.35),transparent); }
+  .btn {
+    display:inline-flex; align-items:center; gap:8px; justify-content:center;
+    background:linear-gradient(180deg,#22252f,#1a1d26); color:var(--ink);
+    border:1px solid #3a3e4c; padding:9px 22px; border-radius:3px; cursor:pointer; font-size:15px;
+    font-family:inherit; letter-spacing:2px; transition:all .15s;
+    box-shadow:0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .btn:hover:not(:disabled) { border-color:var(--gold); color:var(--gold-hi); transform:translateY(-1px); }
+  .btn:active:not(:disabled){ transform:translateY(0); }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btn.primary { background:linear-gradient(180deg,#4a3a12,#33290c); border-color:var(--gold); color:var(--gold-hi); }
+  .btn.danger { border-color:#7a2e2e; color:#c96a5a; }
+  .btn.danger:hover:not(:disabled) { border-color:#c96a5a; color:#e08a7a; }
+  input[type=text] {
+    background:#0e1015; border:1px solid #3a3e4c; color:#e8e4d8; padding:11px 14px;
+    border-radius:3px; font-size:16px; font-family:inherit; letter-spacing:1px;
+    width:300px; text-align:center;
+  }
+  input[type=text]:focus { outline:none; border-color:var(--gold); box-shadow:0 0 12px rgba(201,162,39,.15); }
+
+  .bar { height:16px; background:#23252e; border-radius:2px; overflow:hidden; position:relative;
+    border:1px solid #33363f; box-shadow:inset 0 2px 4px rgba(0,0,0,.5); }
+  .bar > div { height:100%; transition:width .35s ease; position:relative; }
+  .bar > div::after{ content:""; position:absolute; inset:0;
+    background:linear-gradient(180deg,rgba(255,255,255,.22),transparent 45%,rgba(0,0,0,.25)); }
+  .bar.hp > div { background:linear-gradient(90deg,#6e1c14,#a83424); }
+  .bar.xp > div { background:linear-gradient(90deg,#6b5a1c,#c9a227); }
+  .bar.ehp > div { background:linear-gradient(90deg,#4e1a30,#96284f); }
+  .bar.mini{ height:9px; }
+  .bar-label { display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin:3px 0 6px; letter-spacing:1px; }
+
+  /* 飘烬 */
+  .ember{ position:fixed; bottom:-12px; border-radius:50%; pointer-events:none; z-index:1;
+    background:radial-gradient(circle at 40% 35%, #f0d070, #b03a2e 75%);
+    animation:emberRise linear forwards; }
+  @keyframes emberRise { 0%{opacity:0; transform:translateY(0) translateX(0) scale(1);} 12%{opacity:.85;} 100%{opacity:0; transform:translateY(-108vh) translateX(60px) scale(.4);} }
+  @keyframes spinSlow { to{ transform:rotate(360deg); } }
+  .sigil-ring { animation:spinSlow 46s linear infinite; transform-origin:center; }
+
+  /* ============ 世界地图 ============ */
+  #map-wrap { text-align:center; }
+  #map-wrap svg { width:100%; max-width:980px; height:auto; display:block; margin:0 auto; }
+  .map-node { cursor:pointer; }
+  .map-node.locked { cursor:not-allowed; }
+  .map-node circle.core { transition:all .18s; }
+  .map-node:not(.locked):hover circle.core { filter:brightness(1.4); }
+  .map-node.current circle.halo { animation:haloPulse 2s infinite; }
+  @keyframes haloPulse { 0%,100%{opacity:.25; r:26;} 50%{opacity:.7; r:32;} }
+  .map-name { font-size:13px; fill:#d8c27a; letter-spacing:2px; }
+  .map-req { font-size:10px; fill:#7d8a99; letter-spacing:1px; }
+  .map-desc-text { font-family:inherit; }
+
+  /* 地点详情 */
+  #loc-detail h3 { color:#d8c27a; font-size:20px; letter-spacing:3px; margin-bottom:4px; }
+  #loc-detail .tags { font-size:12px; color:#c96a5a; margin:8px 0; letter-spacing:1px; line-height:1.9; }
+  #loc-detail p { font-size:13.5px; color:#9a958a; line-height:1.85; }
+  .hint { color:#5a564d; font-size:13px; letter-spacing:2px; text-align:center; padding:26px 0; }
+
+  /* 战斗 */
+  .foe { border:1px solid #3a3e4c; border-radius:5px; padding:10px 14px; margin-bottom:10px;
+    cursor:pointer; transition:all .15s; background:rgba(255,255,255,.015); }
+  .foe:hover { border-color:#5a5040; }
+  .foe.targeted { border-color:var(--gold); box-shadow:0 0 14px rgba(201,162,39,.18); }
+  .foe.dead { opacity:.28; cursor:default; filter:grayscale(.8); }
+  .foe .fname { font-size:17px; letter-spacing:2px; color:#e0b0b0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px; }
+  .etag { font-size:10.5px; padding:2px 9px; border:1px solid; border-radius:2px; letter-spacing:2px; display:inline-flex; align-items:center; gap:4px; }
+  .etag.elite{ color:#b48ad8; border-color:#6a4a8a; }
+  .etag.boss{ color:var(--gold-hi); border-color:var(--gold); background:rgba(201,162,39,.08); }
+  .etag.rage{ color:#e06a5a; border-color:#8a3a2a; }
+  .etag.frost{ color:var(--frost); border-color:#3a6a80; }
+  .etalent { font-size:11.5px; color:#c98a6a; margin:4px 0 6px; line-height:1.6; border-left:2px solid #5a3a2a; padding-left:8px; }
+  .intent { display:inline-flex; align-items:center; gap:7px; border:1px solid #6b3030; color:#d88;
+    padding:4px 12px; border-radius:2px; font-size:12.5px; letter-spacing:1px; margin-top:5px;
+    background:rgba(107,48,48,.14); }
+  .intent.buff { border-color:#4a6b30; color:#9c7; background:rgba(74,107,48,.14); }
+  .intent.frost { border-color:#3a6a80; color:var(--frost); background:rgba(58,106,128,.14); }
+  .intent.pulse { animation:intentPulse 1.2s infinite; }
+  @keyframes intentPulse { 0%,100%{filter:brightness(1);} 50%{filter:brightness(1.35);} }
+  .mini { font-size:13px; color:#9a958a; letter-spacing:1px; line-height:2; }
+  .gem { display:inline-block; width:16px; height:16px; margin-right:4px; border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg); border:1px solid #3a6a80; background:#101c24; vertical-align:-2px; }
+  .gem.full { background:radial-gradient(circle at 35% 30%, #7ec8e8, #1e5a78); box-shadow:0 0 8px rgba(80,170,210,.55); }
+  .blk-badge { display:inline-flex; align-items:center; gap:6px; border:1px solid #4a5568; color:#9ab;
+    padding:3px 12px; border-radius:2px; font-size:13px; margin-left:8px; }
+  .turn-badge { display:inline-block; border:1px solid #3a6a4a; color:#8c8; padding:3px 12px; border-radius:2px; font-size:13px; margin-left:8px; }
+  #battle-top { display:flex; gap:14px; margin-bottom:12px; }
+  #enemy-box { flex:1.15; }
+  #player-box { flex:1; }
+  #hand { display:flex; gap:12px; flex-wrap:wrap; min-height:160px; margin:16px 0; align-items:stretch; }
+  .card {
+    width:126px; min-height:158px; border-radius:6px; padding:11px; cursor:pointer;
+    transition:all .16s; display:flex; flex-direction:column; position:relative;
+    background:linear-gradient(165deg,#20242f 0%,#171a22 70%);
+    border:1px solid #3a3e4c; box-shadow:0 3px 10px rgba(0,0,0,.45);
+  }
+  .card::before{ content:""; position:absolute; top:0; left:8px; right:8px; height:2px; border-radius:2px; }
+  .card.t-atk::before{ background:var(--atk); } .card.t-blk::before{ background:var(--def); } .card.t-skill::before{ background:var(--skill); }
+  .card:hover { transform:translateY(-9px) rotate(-1.2deg); border-color:var(--gold);
+    box-shadow:0 12px 26px rgba(0,0,0,.6), 0 0 16px rgba(201,162,39,.14); }
+  .card.dead { opacity:.32; pointer-events:none; filter:grayscale(.7); }
+  .card .cn { font-size:14.5px; color:#e0c568; letter-spacing:1px; margin:4px 0 6px; }
+  .card .ct { font-size:10.5px; color:#7d8a99; margin-bottom:6px; letter-spacing:3px; display:flex; align-items:center; gap:5px; }
+  .card .cd { font-size:12px; color:#b8b3a4; line-height:1.65; flex:1; }
+  .card .cc { position:absolute; top:8px; right:8px; width:25px; height:25px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:13px; color:#8ec6dd;
+    border:1px solid #3a6a80; background:#101c24; box-shadow:0 0 8px rgba(60,130,170,.2); }
+  #blog { background:#0d0f14; border:1px solid var(--line); border-radius:4px; padding:12px 16px;
+    height:132px; overflow-y:auto; font-size:13px; line-height:1.95; color:#9a958a;
+    box-shadow:inset 0 2px 8px rgba(0,0,0,.5); }
+  #blog .dmg { color:#d88; } #blog .heal { color:#8c8; } #blog .sys { color:var(--gold); } #blog .turn { color:#5a6a8a; font-size:11px; letter-spacing:2px; }
+  .battle-btns { margin-top:12px; display:flex; gap:12px; }
+  .float-dmg { position:absolute; font-size:22px; font-weight:bold; pointer-events:none; z-index:60;
+    animation:floatUp 1s ease-out forwards; text-shadow:0 2px 6px rgba(0,0,0,.8); }
+  .float-dmg.crit { font-size:30px; }
+  @keyframes floatUp { 0%{opacity:1; transform:translateY(0);} 100%{opacity:0; transform:translateY(-48px);} }
+  @keyframes shake { 0%,100%{transform:translateX(0);} 20%{transform:translateX(-7px);} 45%{transform:translateX(6px);} 70%{transform:translateX(-4px);} 90%{transform:translateX(2px);} }
+  .shaking { animation:shake .32s ease; }
+  @keyframes pulse-red { 0%,100%{box-shadow:0 0 0 rgba(176,58,46,0);} 50%{box-shadow:0 0 24px rgba(176,58,46,.45);} }
+  .lowhp { animation:pulse-red 1.6s infinite; }
+  @keyframes flashHeal { 0%{box-shadow:0 0 0 rgba(127,168,111,0);} 30%{box-shadow:0 0 26px rgba(127,168,111,.5);} 100%{box-shadow:0 0 0 rgba(127,168,111,0);} }
+  .flashheal { animation:flashHeal .7s ease; }
+
+  /* 弹窗 */
+  #modal-mask { display:none; position:fixed; inset:0; background:rgba(4,5,8,.86); z-index:50;
+    align-items:center; justify-content:center; backdrop-filter:blur(3px); }
+  #modal-mask.show { display:flex; }
+  #modal { background:linear-gradient(180deg,#181b23,#12141b); border:1px solid #4a4432; border-radius:6px;
+    padding:30px 32px; max-width:820px; width:92%; max-height:86vh; overflow-y:auto;
+    box-shadow:0 22px 60px rgba(0,0,0,.75), 0 0 44px rgba(201,162,39,.07);
+    animation:modalIn .28s ease; }
+  @keyframes modalIn { from{opacity:0; transform:translateY(16px) scale(.97);} to{opacity:1; transform:none;} }
+  #modal h2 { color:var(--gold); letter-spacing:6px; font-size:22px; text-align:center; margin-bottom:6px; }
+  #modal .msub { text-align:center; color:var(--dim); font-size:13px; margin-bottom:20px; letter-spacing:2px; }
+  .boon-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .boon { background:#1b1e27; border:1px solid #3a3e4c; border-radius:5px; padding:18px 14px;
+    cursor:pointer; transition:all .16s; text-align:center; }
+  .boon:hover { border-color:var(--gold); transform:translateY(-4px); box-shadow:0 10px 22px rgba(0,0,0,.5); }
+  .boon h4 { color:#e0c568; font-size:16px; letter-spacing:2px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; gap:7px; }
+  .boon p { font-size:12.5px; color:#9a958a; line-height:1.75; }
+  .boon .cnt { color:var(--gold); font-size:12px; margin-top:8px; }
+  .cls-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:12px; }
+  @media (max-width:640px){ .boon-grid{grid-template-columns:1fr;} #battle-top{flex-direction:column;} }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .chip { border:1px solid #3a3e4c; border-radius:2px; padding:3px 10px; font-size:12px; color:#b8b3a4;
+    display:inline-flex; align-items:center; gap:5px; }
+  .chip.relic { border-color:#4a5a3a; color:#a8c080; }
+  .chip.boon { border-color:#5a4a2a; color:#d8c27a; }
+  .chip.wpn { border-color:#5a3a3a; color:#d8a898; }
+  .rules { font-size:13px; color:#8a8577; line-height:2.1; letter-spacing:1px; }
+  .rules b { color:#b8b3a4; font-weight:normal; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-track { background:#101218; }
+  ::-webkit-scrollbar-thumb { background:#33363f; border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover { background:#4a4e5a; }
+  .icon { display:inline-block; vertical-align:-2px; }
+</style>
+</head>
+<body>
+
+<!-- 开始界面 -->
+<div class="screen active" id="screen-start">
+  <svg width="84" height="84" viewBox="0 0 84 84" fill="none" style="display:block;margin:34px auto 4px;">
+    <g class="sigil-ring"><circle cx="42" cy="42" r="37" stroke="#c9a227" stroke-width="1" opacity=".7" stroke-dasharray="6 5"/></g>
+    <circle cx="42" cy="42" r="29" stroke="#c9a227" stroke-width=".8" opacity=".4"/>
+    <path d="M42 14 L51 42 L42 70 L33 42 Z" fill="#c9a227" opacity=".9"/>
+    <path d="M15 42 L42 33 L69 42 L42 51 Z" fill="#8a6a1a"/>
+  </svg>
+  <h1>灰 烬 之 路</h1>
+  <div class="subtitle">ASHEN PATH · 卡牌构筑 Roguelike · 第四版</div>
+  <div class="panel" style="max-width:600px;margin:0 auto 20px;">
+    <p class="rules" style="text-align:center;margin-bottom:18px;">
+      你身无长物，唯有一柄铁剑。<br>
+      沿古道穿过十处凶险之地，直面三位首领。<br>
+      升级时择取祝福，十级时踏入职业学院择定道途。<br>
+      群敌环伺，奇遇四伏——<b>等级达到十级之后，死亡将令你失去全部祝福。</b>
+    </p>
+    <div style="text-align:center;">
+      <input type="text" id="inp-name" maxlength="10" placeholder="输入你的名字">
+    </div>
+    <div style="text-align:center;margin-top:18px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn primary" style="padding:12px 40px;font-size:17px;" onclick="startGame()">踏上灰烬之路</button>
+      <button class="btn" id="btn-continue" style="padding:12px 30px;font-size:15px;display:none;" onclick="continueGame()">继续旅程</button>
+    </div>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#5a564d;letter-spacing:2px;line-height:2;">
+    回合制卡牌战斗 · 群敌遭遇战 · 旅途奇遇事件 · 20 种祝福 · 5 系职业 · 通关轮回
+  </p>
+</div>
+
+<!-- 地图界面 -->
+<div class="screen" id="screen-map">
+  <h1 style="font-size:24px;margin:10px 0 4px;letter-spacing:5px;text-align:left;" id="map-title"></h1>
+  <div class="panel">
+    <div id="statline"></div>
+    <div class="chips" id="chip-line"></div>
+  </div>
+  <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="btn" id="btn-potion" onclick="usePotion()"></button>
+    <button class="btn danger" onclick="abandonRun()">放弃这次轮回（清除存档）</button>
+  </div>
+  <div class="panel" id="map-wrap"></div>
+  <div class="panel" id="loc-detail"><div class="hint">在地图上选择一处地点</div></div>
+  <p style="margin-top:16px;font-size:12px;color:#5a564d;letter-spacing:1px;line-height:1.9;">
+    规则：金色节点为已解锁之地，光晕标记为你当前的足迹；战斗中敌人可能成群出现，点击敌人可切换目标；胜利后有机会触发旅途奇遇；升级时从三个祝福中择一；10级解锁职业学院、职业分支与圣遗物；等级≥10时死亡将失去所有祝福。讨伐血月之主后可进入更凶险的轮回。
+  </p>
+</div>
+
+<!-- 战斗界面 -->
+<div class="screen" id="screen-battle">
+  <div id="battle-top">
+    <div class="panel" id="enemy-box"></div>
+    <div class="panel" id="player-box"></div>
+  </div>
+  <div id="hand"></div>
+  <div class="battle-btns">
+    <button class="btn primary" onclick="endTurn()">结束回合</button>
+    <button class="btn danger" onclick="fleeBattle()">撤退（损失10%生命）</button>
+  </div>
+  <div id="blog" style="margin-top:14px;"></div>
+</div>
+
+<!-- 弹窗 -->
+<div id="modal-mask"><div id="modal"></div></div>
+
+<script>
+/* ================= SVG 图标 ================= */
+const IC = {
+  sword:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 L14 10 M14 10 L18 4 L20 6 L14 10 Z M4 20 L6 18 M4 20 L7 20 L5 17 Z"/></svg>',
+  heavy:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21 L13 11 M13 11 L17 3 M21 21 L11 11 M11 11 L7 3"/></svg>',
+  shield:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 L20 6 V12 C20 17 16 20 12 21 C8 20 4 17 4 12 V6 Z"/></svg>',
+  skull:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 C7 3 4 6 4 11 C4 14 6 16 8 17 V20 H16 V17 C18 16 20 14 20 11 C20 6 17 3 12 3 Z M9 11 H9.5 M14.5 11 H15"/></svg>',
+  star:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L14.5 9 L22 9.5 L16 14 L18 21.5 L12 17 L6 21.5 L8 14 L2 9.5 L9.5 9 Z"/></svg>',
+  gem:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3 H17 L22 9 L12 21 L2 9 Z"/></svg>',
+  potion:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 3 H14 M11 3 V7 C7 9 5 12 5 15 A7 7 0 0 0 19 15 C19 12 17 9 13 7 V3"/><path d="M9 14 A3 3 0 0 0 15 14" stroke-width="1.4"/></svg>',
+  frost:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 V22 M4 6 L20 18 M20 6 L4 18 M12 2 L9 5 M12 2 L15 5 M12 22 L9 19 M12 22 L15 19"/></svg>',
+  rage:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21 C5 13 4 8 8 4 C10 6 11 7 12 9 C13 7 14 6 16 4 C20 8 19 13 12 21 Z"/></svg>',
+  bow:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3 C14 7 14 17 6 21 M6 3 V21 M6 12 H19 M16 8 L19 12 L16 16"/></svg>',
+  book:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4 H10 A2 2 0 0 1 12 6 V20 A2 2 0 0 0 10 18 H4 Z M20 4 H14 A2 2 0 0 0 12 6 V20 A2 2 0 0 1 14 18 H20 Z"/></svg>',
+  axe:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 21 L15 11 M15 11 C15 6 18 3 22 3 C22 8 19 11 15 11 Z"/></svg>',
+  wing:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12 C8 4 16 4 21 6 C16 8 12 12 10 16 C7 15 4 14 3 12 Z"/></svg>',
+  cross:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4 V20 M6 10 H18 M12 4 L9.5 7 M12 4 L14.5 7"/></svg>',
+  lock:'<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9"/><path d="M8 11 V7 A4 4 0 0 1 16 7 V11"/></svg>',
+  scroll:'<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4 H18 A2 2 0 0 1 20 6 V18 A2 2 0 0 1 18 20 H6 A2 2 0 0 1 4 18 V6 A2 2 0 0 1 6 4 Z M8 9 H16 M8 13 H13"/></svg>',
+};
+
+/* ================= 数据 ================= */
+const WEAPONS = {
+  iron:     { name:'铁剑',     atk:8,  desc:'平凡的武器，也是一切的开始' },
+  steel:    { name:'精钢长剑', atk:14, desc:'冶炼精良的制式长剑' },
+  mace:     { name:'狼牙棒',   atk:12, desc:'沉重野蛮，砸碎骨头' },
+  bow:      { name:'猎手短弓', atk:11, desc:'迅捷而精准' },
+  rune:     { name:'符文法杖', atk:16, desc:'杖身铭刻着低语的符文' },
+  knight:   { name:'骑士重剑', atk:20, desc:'王国骑士团的制式重剑' },
+  warglaive:{ name:'狼骑弯刀', atk:19, eff:'crit',   desc:'暴击率 +15%' },
+  shadow:   { name:'影刃',     atk:18, eff:'crit',   desc:'暴击率 +15%' },
+  holy:     { name:'圣辉之杖', atk:24, eff:'might',  desc:'全部伤害 +10%' },
+  reaver:   { name:'饮血剑',   atk:22, eff:'leech',  desc:'造成伤害的 10% 转化为生命' },
+  dragon:   { name:'龙牙巨剑', atk:26, eff:'might',  desc:'全部伤害 +10%' },
+  thunder:  { name:'雷鸣战锤', atk:24, eff:'pierce', desc:'攻击无视敌人格挡' },
+  moon:     { name:'血月镰刀', atk:30, eff:'leech',  desc:'造成伤害的 10% 转化为生命' },
+};
+const DROP_TABLE = { 1:['steel','mace'], 2:['bow','rune'], 3:['knight','shadow','warglaive'], 4:['holy','dragon','reaver','thunder'], 5:['moon','dragon','reaver','thunder'] };
+
+const RELICS = [
+  { id:'belt',   name:'巨人腰带', desc:'生命上限 +30', icon:'shield' },
+  { id:'fang',   name:'吸血之牙', desc:'造成伤害的 10% 转化为生命', icon:'rage' },
+  { id:'stone',  name:'贤者之石', desc:'获得的经验提高 20%', icon:'gem' },
+  { id:'badge',  name:'战意徽章', desc:'攻击伤害提高 15%', icon:'sword' },
+  { id:'pendant',name:'生命吊坠', desc:'每回合结束时恢复 3 点生命', icon:'cross' },
+  { id:'boots',  name:'疾风之靴', desc:'每场战斗开始时额外抽 1 张牌', icon:'wing' },
+  { id:'shield', name:'残破圣盾', desc:'每场战斗开始时获得 6 点格挡', icon:'shield' },
+];
+
+const BOONS = [
+  { id:'tough',     name:'坚韧体魄', desc:'生命上限提高 20 点', icon:'shield' },
+  { id:'edge',      name:'利刃精通', desc:'所有攻击伤害提高 15%', icon:'sword' },
+  { id:'leech',     name:'嗜血',     desc:'造成伤害的 10% 转化为生命', icon:'rage' },
+  { id:'bulwark',   name:'铁壁',     desc:'每回合开始时获得 4 点格挡', icon:'shield' },
+  { id:'first',     name:'先发制人', desc:'每场战斗第一回合能量 +2', icon:'star' },
+  { id:'crit',      name:'致命一击', desc:'暴击率提高 15%（暴击造成双倍伤害）', icon:'star' },
+  { id:'thorns',    name:'荆棘之躯', desc:'受到攻击时反弹 5 点伤害', icon:'skull' },
+  { id:'triumph',   name:'愈战愈勇', desc:'击杀敌人后恢复 15% 生命', icon:'cross' },
+  { id:'vigor',     name:'精力充沛', desc:'每回合能量 +1', icon:'gem' },
+  { id:'insight',   name:'深思熟虑', desc:'每回合抽牌数 +1', icon:'book' },
+  { id:'ward',      name:'守护之灵', desc:'单次受到的伤害不会超过生命上限的 30%', icon:'shield' },
+  { id:'hunter',    name:'猎手本能', desc:'对精英与首领造成的伤害提高 20%', icon:'bow' },
+  { id:'laststand', name:'背水一战', desc:'生命低于 30% 时，伤害提高 30%', icon:'rage' },
+  { id:'flurry',    name:'乱舞',     desc:'每回合手牌池中额外加入一张攻击牌', icon:'sword' },
+  { id:'pierce',    name:'破甲之势', desc:'你的攻击无视敌人的格挡', icon:'axe' },
+  { id:'fortress',  name:'坚壁',     desc:'格挡牌获得的格挡提高 50%', icon:'shield' },
+  { id:'aftershock',name:'余震',     desc:'结束回合时，每剩余 1 点能量对敌人造成 6 点伤害', icon:'heavy' },
+  { id:'undying',   name:'不灭之魂', desc:'每场战斗一次：致命伤害将使你保留 1 点生命并恢复 20% 生命', icon:'cross' },
+  { id:'cripple',   name:'致残打击', desc:'攻击有 20% 概率使敌人下次攻击伤害降低 40%', icon:'skull' },
+  { id:'harvest',   name:'丰饶',     desc:'敌人掉落武器与药剂的概率翻倍', icon:'gem' },
+];
+
+const CLASSES = {
+  warrior:{ name:'战士',   icon:'sword', passive:'狂怒：生命值低于 50% 时，伤害提高 40%',
+    skill:{ name:'裂地斩', cost:3, desc:'造成相当于攻击力 220% 的伤害', mult:2.2 } },
+  mage:   { name:'魔法师', icon:'book',  passive:'奥术亲和：每回合能量 +1',
+    skill:{ name:'奥术冲击', cost:2, desc:'造成 20 点附加于攻击力的伤害', flat:20 } },
+  ranger: { name:'游侠',   icon:'bow',   passive:'疾风：每回合抽牌数 +1',
+    skill:{ name:'三连射', cost:2, desc:'连续攻击三次，每次为攻击力的 55%', hits:3, mult:0.55 } },
+  paladin:{ name:'圣骑士', icon:'cross', passive:'圣光庇佑：每场战斗开始时获得 10 点格挡',
+    skill:{ name:'圣光术', cost:2, desc:'恢复 25% 的生命上限', heal:0.25 } },
+  assassin:{ name:'刺客',  icon:'wing',  passive:'影舞：暴击率提高 25%',
+    skill:{ name:'背刺', cost:1, desc:'造成攻击力 130% 的伤害，此攻击必暴击', mult:1.3, crit:true } },
+};
+
+const MON = {
+  bandit:    { name:'土匪',       hp:32,  atk:7,  xp:22,  drop:.15, potion:.08 },
+  robber:    { name:'强盗',       hp:44,  atk:9,  xp:30,  drop:.15, potion:.08 },
+  wolf:      { name:'野狼',       hp:40,  atk:11, xp:34,  drop:.15, potion:.08 },
+  brigand:   { name:'山贼',       hp:58,  atk:12, xp:46,  drop:.20, potion:.10 },
+  thief:     { name:'影贼',       hp:66,  atk:14, xp:54,  drop:.20, potion:.10 },
+  zombie:    { name:'腐尸',       hp:72,  atk:10, xp:48,  drop:.18, potion:.10 },
+  spider:    { name:'毒蛛',       hp:52,  atk:13, xp:50,  drop:.18, potion:.10 },
+  cultist:   { name:'邪教徒',     hp:74,  atk:15, xp:62,  drop:.20, potion:.12 },
+  skeleton:  { name:'骷髅武士',   hp:92,  atk:16, xp:80,  drop:.22, potion:.12 },
+  bloodfiend:{ name:'血奴',       hp:86,  atk:17, xp:84,  drop:.22, potion:.12 },
+  golem:     { name:'石魔像',     hp:115, atk:15, xp:96,  drop:.25, potion:.12 },
+  executioner:{ name:'刽子手',    hp:135, atk:16, xp:140, drop:.60, relic:.4,  potion:.35, elite:true,
+    talent:'处决：对生命值低于 30% 的目标造成的伤害提高 50%' },
+  drillmaster:{ name:'铁血教头',  hp:170, atk:15, xp:160, drop:.60, relic:.4,  potion:.35, elite:true,
+    talent:'战吼：每行动三次，攻击力永久提高 3' },
+  witch:     { name:'暗影女巫',   hp:150, atk:18, xp:170, drop:.60, relic:.4,  potion:.35, elite:true,
+    talent:'生命汲取：实际造成伤害的 30% 转化为自身生命（被格挡则无汲取）' },
+  soulreaver:{ name:'噬魂者',     hp:185, atk:19, xp:205, drop:.60, relic:.45, potion:.35, elite:true,
+    talent:'噬魂：每三回合吞噬你 6% 的当前生命，并恢复等量生命' },
+  priest:    { name:'腐化祭司',   hp:160, atk:17, xp:190, drop:.60, relic:.4,  potion:.35, elite:true,
+    talent:'腐蚀光环：每回合开始时使你失去 3 点生命（无视格挡）' },
+  troll:     { name:'岩甲巨魔',   hp:225, atk:18, xp:215, drop:.65, relic:.45, potion:.4, elite:true,
+    talent:'反震甲胄：你每次攻击后受到 3 点反震伤害' },
+  chief:     { name:'黑风寨主',   hp:430, atk:22, xp:650, drop:1,   relic:1,   potion:.5, boss:true,
+    talent:'黑风护体：每回合开始时获得 12 点格挡；生命低于 35% 时陷入狂暴' },
+  lich:      { name:'巫妖·维克托',hp:720, atk:26, xp:1500,drop:1,   relic:1,   potion:.6, boss:true,
+    talent:'寒霜新星：每三回合造成 15 点无视格挡的伤害，并使你下回合能量 -1' },
+  bloodlord: { name:'血月之主',   hp:950, atk:30, xp:2200,drop:1,   relic:1,   potion:.6, boss:true,
+    talent:'血月：每三回合恢复 10% 生命并造成 12 点无视格挡的伤害；生命低于 50% 时血月加冕，攻势加剧' },
+};
+
+const LOCS = [
+  { id:'village',  name:'新手村',   req:1,  tier:1, x:90,  y:430, pool:['bandit','robber'],
+    desc:'破败的村落。土匪与强盗在此劫掠路人，是磨练剑术的第一步。' },
+  { id:'wild',     name:'城郊荒原', req:3,  tier:2, x:215, y:350, pool:['robber','wolf','brigand','zombie'],
+    desc:'废弃的农田与呼啸的野风。强盗结伙，野狼成群，腐尸自坟土中爬出。' },
+  { id:'forest',   name:'暗风林',   req:5,  tier:3, x:330, y:270, pool:['brigand','thief','zombie'],
+    elite:['executioner'], eliteChance:.25,
+    desc:'常年不见天日的黑林。传闻刽子手在此追猎迷途者。' },
+  { id:'swamp',    name:'毒蛇沼泽', req:5,  tier:3, x:345, y:415, pool:['spider','cultist','wolf'],
+    elite:['priest'], eliteChance:.22,
+    desc:'毒雾弥漫的湿地。邪教徒在深处举行亵渎的仪式。' },
+  { id:'mine',     name:'黑石矿洞', req:8,  tier:4, x:475, y:330, pool:['thief','brigand','golem'],
+    elite:['drillmaster'], eliteChance:.3,
+    desc:'被山贼占据的旧矿。深处传来铁血教头操练喽啰的咆哮。' },
+  { id:'academy',  name:'职业学院', req:10, tier:4, x:575, y:235, pool:['thief','cultist'],
+    elite:['witch'], eliteChance:.35,
+    desc:'十级方可踏入的古老学院。这里能择定你的职业分支，也潜藏被放逐的暗影女巫。' },
+  { id:'graveyard',name:'枯骨荒野', req:11, tier:4, x:665, y:350, pool:['zombie','skeleton','spider'],
+    elite:['soulreaver'], eliteChance:.3,
+    desc:'一望无际的古战场。噬魂者在骸骨间游荡，吞噬残余的生者气息。' },
+  { id:'ruins',    name:'王城废墟', req:13, tier:5, x:775, y:270, pool:['skeleton','bloodfiend','golem'],
+    elite:['executioner','drillmaster','troll'], eliteChance:.3, boss:'chief',
+    desc:'倾颓的王城。黑风寨主盘踞于此，他的刀下没有活人。' },
+  { id:'tomb',     name:'亡者之墓', req:14, tier:5, x:790, y:400, pool:['skeleton','cultist'],
+    elite:['soulreaver','priest'], eliteChance:.4, boss:'lich',
+    desc:'千年陵墓的入口。巫妖维克托在其中编织寒霜的死亡。' },
+  { id:'altar',    name:'血月祭坛', req:16, tier:5, x:905, y:310, pool:['witch','bloodfiend'],
+    elite:['witch'], eliteChance:.5, boss:'bloodlord',
+    desc:'血月升起之地，万物的终局。血月之主在祭坛顶端等待。' },
+];
+const TIER_COLOR = { 1:'#4a6b4a', 2:'#6b6b3a', 3:'#8a6a2a', 4:'#a3542a', 5:'#b03a2e' };
+
+/* ================= 奇遇事件 ================= */
+function grantBoon(id){
+  p.boons[id] = (p.boons[id]||0)+1;
+  if(id==='tough'){ p.maxHp += 20; p.hp += 20; }
+}
+function randomBoonId(){ return BOONS[Math.floor(Math.random()*BOONS.length)].id; }
+function eventLevelUps(){
+  let ups = 0;
+  while(p.xp >= xpNeed()){ p.xp -= xpNeed(); p.level++; p.maxHp += 6; p.hp += 6; ups++; }
+  p.pendingBless += ups;
+  return ups;
+}
+const EVENTS = [
+  { id:'altar', name:'神秘祭坛', icon:'skull',
+    text:'一座布满裂纹的黑石祭坛，低语着许诺力量的诺言。坛上刻字：以血为契，以力为偿。',
+    choices:[
+      { t:'献祭 15% 当前生命，换取一个随机祝福', cond:()=>p.hp > Math.round(p.maxHp*0.2),
+        fn:()=>{ p.hp = Math.max(1, Math.round(p.hp*0.85)); grantBoon(randomBoonId()); return '鲜血渗入石缝，一股力量涌入你的四肢。'; } },
+      { t:'转身离开', fn:()=>'你压下心中的贪欲，快步离去。' } ] },
+  { id:'smith', name:'流浪铁匠', icon:'axe',
+    text:'路旁的铁匠铺火光未熄。老铁匠打量着你的武器：「伙计，帮你开一次刃，不收钱。」',
+    choices:[
+      { t:'强化最后获得的武器（攻 +3）', fn:()=>{ const w = p.weapons[p.weapons.length-1]; w.atk += 3; w.honed = (w.honed||0)+1; return w.name+' 在锤火中变得更锋利了（攻 '+w.atk+'）。'; } },
+      { t:'请他帮你休整（恢复 30% 生命）', fn:()=>{ p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp*0.3)); return '炉火旁的小憩让你恢复了不少元气。'; } } ] },
+  { id:'hermit', name:'隐居医师', icon:'potion',
+    text:'药香从林间茅屋飘出。白发医师掀开帘子，一言不发地示意你坐下。',
+    choices:[
+      { t:'接受治疗（恢复 45% 生命）', fn:()=>{ p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp*0.45)); return '苦涩的药汤下肚，伤口以肉眼可见的速度愈合。'; } },
+      { t:'婉拒离开', fn:()=>'你拱手道谢，继续前行。' } ] },
+  { id:'chest', name:'尘封宝箱', icon:'gem',
+    text:'半埋在地里的古旧宝箱，锁孔周围留有灼烧的痕迹，箱缝间透出微光。',
+    choices:[
+      { t:'强行开启（一半机会获得宝物，一半机会触发诅咒）', fn:()=>{
+          if(Math.random()<0.5){
+            if(p.level>=10){ const r = RELICS[Math.floor(Math.random()*RELICS.length)]; if(r.id==='belt'){p.maxHp+=30;p.hp+=30;} p.relics.push(r); return '箱中躺着一件圣遗物：'+r.name+'。'; }
+            else { p.potions++; return '箱中是一瓶完好的治疗药剂。'; }
+          } else { const d = Math.round(p.maxHp*0.12); p.hp = Math.max(1, p.hp-d); return '箱中喷出诅咒之火，你受到 '+d+' 点伤害。'; } } },
+      { t:'不去碰它', fn:()=>'你在荒野上学到的第一件事，就是离古怪的箱子远点。' } ] },
+  { id:'obelisk', name:'古老方尖碑', icon:'book',
+    text:'半截埋入土中的方尖碑，碑文记载着前人征伐的心得与临终的悔恨。',
+    choices:[
+      { t:'研读碑文（经验 +35% 当前升级需求）', fn:()=>{ p.xp += Math.round(xpNeed()*0.35); const u = eventLevelUps(); return u>0 ? '前人的智慧涌入脑海——你升到了 '+p.level+' 级！' : '你默默记下了碑文上的战斗心得。'; } },
+      { t:'离开', fn:()=>'碑文上的血字让你感到不安，你转身离去。' } ] },
+  { id:'knight', name:'受伤的骑士', icon:'shield',
+    text:'一名断甲的骑士倚在路边岩石上，嘴唇干裂：「行行好……一剂药剂，我用家传的武艺来偿。」',
+    choices:[
+      { t:'赠予一瓶药剂 → 获得一个随机祝福', cond:()=>(p.potions||0)>0,
+        fn:()=>{ p.potions--; grantBoon(randomBoonId()); return '骑士饮下药剂，将一枚祝福印记按入你的掌心。'; } },
+      { t:'赠予一瓶药剂 → 他点拨你的武艺（随机武器攻 +2）', cond:()=>(p.potions||0)>0,
+        fn:()=>{ p.potions--; const w = p.weapons[Math.floor(Math.random()*p.weapons.length)]; w.atk += 2; return '骑士演示了几记简洁的杀招，你的'+w.name+'用得更加纯熟了（攻 '+w.atk+'）。'; } },
+      { t:'爱莫能助', fn:()=>'你摇了摇头。骑士闭上眼，不再说话。' } ] },
+  { id:'bloodpool', name:'血池', icon:'rage',
+    text:'一汪温热的血池，水面浮着暗金色的光。传说泡进去的人能夺得力量，代价是寿命。',
+    choices:[
+      { t:'浸泡（生命上限 -10，获得一个随机祝福）', cond:()=>p.maxHp>40,
+        fn:()=>{ p.maxHp -= 10; if(p.hp>p.maxHp) p.hp = p.maxHp; grantBoon(randomBoonId()); return '灼热的血池侵蚀着你的生命，但力量随之而来。'; } },
+      { t:'离开', fn:()=>'你盯着血池看了很久，终究没有下去。' } ] },
+  { id:'shrine', name:'无名神龛', icon:'cross',
+    text:'一座无名的神龛，龛中供着一柄锈蚀的短刀，刀柄上缠着褪色的红绳。',
+    choices:[
+      { t:'供奉 8% 生命 → 神龛回赠一瓶药剂与抚慰（恢复 20% 生命）', cond:()=>p.hp > Math.round(p.maxHp*0.12),
+        fn:()=>{ p.hp = Math.max(1, p.hp - Math.round(p.maxHp*0.08)); p.potions++; p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp*0.2)); return '短刀轻鸣，一瓶药剂出现在龛前，你的伤口也暖了起来。'; } },
+      { t:'静静鞠躬后离开', fn:()=>'你向无名者致意，继续前行。' } ] },
+];
+let lastEventId = '';
+
+/* ================= 玩家 ================= */
+const SAVE_KEY = 'ashen_path_save_v4';
+let p = null;
+let B = null;
+const $ = id => document.getElementById(id);
+
+function newPlayer(name){
+  return { name, level:1, xp:0, hp:104, maxHp:104,
+    weapons:[{ key:'iron', ...WEAPONS.iron }],
+    relics:[], boons:{}, cls:null, pendingBless:0, kills:0,
+    potions:1, ng:0, bloodlordDown:false, dead:false };
+}
+const xpNeed = () => p.level*45 + 55;
+const slots  = () => p.level>=10?4 : p.level>=7?3 : p.level>=4?2 : 1;
+const bc = id => p.boons[id]||0;
+const rc = id => p.relics.filter(r=>r.id===id).length;
+const hasWpnEff = eff => p.weapons.some(w=>w.eff===eff);
+const baseAtk = () => p.weapons.reduce((s,w)=>s+w.atk,0) + p.level*2;
+function dmgMult(){
+  let m = 1 + 0.15*bc('edge') + 0.15*rc('badge');
+  m += 0.10 * p.weapons.filter(w=>w.eff==='might').length;
+  if(p.cls==='warrior' && p.hp < p.maxHp*0.5) m *= 1.4;
+  if(bc('laststand') && p.hp < p.maxHp*0.3) m *= 1 + 0.30*bc('laststand');
+  return m;
+}
+function lifesteal(){
+  let s = 0.10*bc('leech') + 0.10*rc('fang');
+  s += 0.10 * p.weapons.filter(w=>w.eff==='leech').length;
+  return s;
+}
+function critChance(){
+  let c = 0.15*bc('crit');
+  c += 0.15 * p.weapons.filter(w=>w.eff==='crit').length;
+  if(p.cls==='assassin') c += 0.25;
+  return c;
+}
+
+/* ================= 存档 ================= */
+function saveGame(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(p)); }catch(e){} }
+function loadGame(){ try{ const s = localStorage.getItem(SAVE_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+
+/* ================= 界面工具 ================= */
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); window.scrollTo(0,0); }
+function openModal(html){ $('modal').innerHTML = html; $('modal-mask').classList.add('show'); }
+function closeModal(){ $('modal-mask').classList.remove('show'); }
+function log(msg, cls){
+  const d = document.createElement('div');
+  if(cls) d.className = cls;
+  d.innerHTML = msg;
+  $('blog').prepend(d);
+}
+function floatText(target, text, color, isCrit){
+  const box = $(target);
+  if(!box) return;
+  const r = box.getBoundingClientRect();
+  if(r.width===0 && r.height===0) return;
+  const s = document.createElement('span');
+  s.className = 'float-dmg'+(isCrit?' crit':'');
+  s.textContent = text;
+  s.style.color = color;
+  s.style.left = (r.left + r.width/2 - 14 + (Math.random()*30-15)) + 'px';
+  s.style.top = (r.top + r.height/2 - 10) + 'px';
+  s.style.position = 'fixed';
+  document.body.appendChild(s);
+  setTimeout(()=>s.remove(), 1000);
+}
+function shake(id){ const el = $(id); if(!el) return; el.classList.remove('shaking'); void el.offsetWidth; el.classList.add('shaking'); }
+function flash(id){ const el = $(id); if(!el) return; el.classList.remove('flashheal'); void el.offsetWidth; el.classList.add('flashheal'); }
+
+/* ================= 飘烬 ================= */
+function spawnEmber(){
+  if(!$('screen-start').classList.contains('active')) return;
+  const s = document.createElement('span');
+  s.className = 'ember';
+  const size = 2 + Math.random()*4;
+  s.style.width = s.style.height = size + 'px';
+  s.style.left = Math.random()*100 + 'vw';
+  s.style.animationDuration = (5 + Math.random()*6) + 's';
+  document.body.appendChild(s);
+  setTimeout(()=>s.remove(), 11000);
+}
+setInterval(spawnEmber, 380);
+
+/* ================= 开始 ================= */
+function startGame(){
+  const name = $('inp-name').value.trim() || '无名者';
+  p = newPlayer(name);
+  clearSave();
+  toMap();
+}
+function continueGame(){
+  const s = loadGame();
+  if(s){
+    p = Object.assign(newPlayer(s.name||'无名者'), s);
+    if(p.dead || p.hp <= 0){ p.dead = false; p.hp = p.maxHp; } // 死亡存档读档即满血复活
+    toMap();
+  }
+}
+function abandonRun(){
+  openModal('<h2>放弃轮回</h2><div class="msub">将清除存档并回到起点</div>'
+    +'<div style="text-align:center;"><button class="btn danger" onclick="clearSave();location.reload()">确认放弃</button> '
+    +'<button class="btn" onclick="closeModal()">再想想</button></div>');
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  $('inp-name').focus();
+  const s = loadGame();
+  if(s && s.name){ $('btn-continue').style.display='inline-flex'; $('btn-continue').innerHTML=IC.gem+' 继续旅程 · '+s.name+' Lv.'+s.level+(s.ng>0?' · 轮回'+s.ng:''); }
+});
+
+/* ================= 地图 ================= */
+function toMap(){
+  show('screen-map');
+  renderMap();
+  saveGame();
+  if(p.pendingBless > 0){ openBoonModal(); return; }
+  if(p.level >= 10 && !p.cls){ try{ openClassModal(); }catch(e){} }
+}
+
+function renderMap(){
+  $('map-title').innerHTML = p.name + ' · 灰烬之路' + (p.ng>0?' <span style="font-size:13px;color:#c96a5a;">— 第 '+(p.ng+1)+' 轮回</span>':'');
+  const xpPct = Math.min(100, Math.round(p.xp/xpNeed()*100));
+  const hpPct = Math.min(100, Math.round(p.hp/p.maxHp*100));
+  let h = '';
+  h += '<span>等级 <b>'+p.level+'</b></span>';
+  h += '<span style="min-width:150px;display:inline-block;">生命 <div class="bar mini hp" style="display:inline-block;width:90px;vertical-align:middle;margin:0 6px;"><div style="width:'+hpPct+'%"></div></div> <b>'+p.hp+'/'+p.maxHp+'</b></span>';
+  h += '<span style="min-width:150px;display:inline-block;">经验 <div class="bar mini xp" style="display:inline-block;width:90px;vertical-align:middle;margin:0 6px;"><div style="width:'+xpPct+'%"></div></div> <b>'+p.xp+'/'+xpNeed()+'</b></span>';
+  h += '<span>攻击力 <b>'+Math.round(baseAtk()*dmgMult())+'</b></span>';
+  h += '<span>暴击 <b>'+Math.round(critChance()*100)+'%</b></span>';
+  h += '<span>武器栏 <b>'+p.weapons.length+' / '+slots()+'</b></span>';
+  h += '<span>药剂 <b>'+(p.potions||0)+'</b></span>';
+  if(p.cls) h += '<span>职业 <b>'+CLASSES[p.cls].name+'</b></span>';
+  h += '<span>击杀 <b>'+p.kills+'</b></span>';
+  if(p.bloodlordDown) h += '<span style="color:#c9a227;">'+IC.star+' 血月已陨落</span>';
+  $('statline').innerHTML = h;
+
+  let chips = '';
+  p.weapons.forEach((w,i)=> chips += '<span class="chip wpn">'+IC.sword+' ['+(i+1)+'] '+w.name+' · 攻'+w.atk+(w.eff?' · '+w.desc:'')+(w.honed?' ·精磨×'+w.honed:'')+'</span>');
+  p.relics.forEach(r=> chips += '<span class="chip relic">'+IC.gem+' 圣遗物 · '+r.name+'（'+r.desc+'）</span>');
+  Object.keys(p.boons).forEach(id=>{
+    const b = BOONS.find(x=>x.id===id);
+    chips += '<span class="chip boon">'+IC.star+' 祝福 · '+b.name+(p.boons[id]>1?' ×'+p.boons[id]:'')+'</span>';
+  });
+  $('chip-line').innerHTML = chips || '<span class="chip" style="color:#5a564d;">尚无祝福与圣遗物</span>';
+
+  const pb = $('btn-potion');
+  pb.innerHTML = IC.potion+' 饮用治疗药剂（'+(p.potions||0)+'）· 恢复 40% 生命';
+  pb.disabled = (p.potions||0)<=0 || p.hp>=p.maxHp;
+
+  buildMapSVG();
+  // 默认选中当前进度节点
+  let cur = 0;
+  LOCS.forEach((l,i)=>{ if(p.level>=l.req) cur = i; });
+  selectLoc(LOCS[cur].id, true);
+}
+
+function buildMapSVG(){
+  const pathD = LOCS.map((l,i)=>(i===0?'M':'L')+l.x+','+l.y).join(' ');
+  let s = '<svg viewBox="0 0 1000 540" xmlns="http://www.w3.org/2000/svg">';
+  // 装饰：远山与血气
+  s += '<path d="M0,120 L90,60 L180,120 L260,70 L340,120 L430,55 L520,120 L600,75 L690,120 L780,60 L870,120 L1000,80 L1000,0 L0,0 Z" fill="#1a1420" opacity=".55"/>';
+  s += '<path d="M0,180 L120,130 L240,180 L360,140 L480,180 L620,135 L760,180 L880,145 L1000,180 L1000,120 L0,120 Z" fill="#141018" opacity=".5"/>';
+  s += '<circle cx="905" cy="150" r="34" fill="#7a1f2a" opacity=".28"/><circle cx="905" cy="150" r="22" fill="#a83424" opacity=".3"/>';
+  // 路径
+  s += '<path d="'+pathD+'" stroke="#3a3428" stroke-width="4" fill="none" stroke-dasharray="8 7" stroke-linecap="round" opacity=".8"/>';
+  LOCS.forEach((l,i)=>{
+    const unlocked = p.level >= l.req;
+    const isCurrent = (i === currentLocIndex());
+    const color = TIER_COLOR[l.tier];
+    s += '<g class="map-node'+(unlocked?'':' locked')+(isCurrent?' current':'')+'" onclick="selectLoc(\''+l.id+'\')">'
+      + '<title>'+l.name+' · 需求等级 '+l.req+'</title>'
+      + (isCurrent ? '<circle class="halo" cx="'+l.x+'" cy="'+l.y+'" r="28" fill="none" stroke="#c9a227" stroke-width="1.5"/>' : '')
+      + '<circle class="core" cx="'+l.x+'" cy="'+l.y+'" r="19" fill="'+(unlocked?'#1b1e27':'#15171d')+'" stroke="'+(unlocked?color:'#3a3e4c')+'" stroke-width="2"/>'
+      + '<text x="'+l.x+'" y="'+(l.y+5)+'" text-anchor="middle" font-size="13" fill="'+(unlocked?'#e0c568':'#5a5e6a')+'" font-family="inherit">'+(i+1)+'</text>'
+      + (l.boss ? '<text x="'+(l.x+15)+'" y="'+(l.y-14)+'" font-size="11" fill="#b03a2e" font-family="inherit">'+IC.skull+'</text>' : '')
+      + '<text class="map-name" x="'+l.x+'" y="'+(l.y+40)+'" text-anchor="middle" style="opacity:'+(unlocked?1:.45)+'">'+l.name+'</text>'
+      + '<text class="map-req" x="'+l.x+'" y="'+(l.y+56)+'" text-anchor="middle">'+(unlocked?'':'Lv.'+l.req+' ')+TIER_TXT[l.tier]+'</text>'
+      + '</g>';
+  });
+  s += '</svg>';
+  $('map-wrap').innerHTML = s;
+}
+const TIER_TXT = { 1:'安逸', 2:'危险', 3:'险恶', 4:'凶恶', 5:'绝境' };
+function currentLocIndex(){
+  let cur = 0;
+  LOCS.forEach((l,i)=>{ if(p.level>=l.req) cur = i; });
+  return cur;
+}
+function selectLoc(id, silent){
+  const loc = LOCS.find(l=>l.id===id);
+  if(!loc) return;
+  if(p.level < loc.req){
+    if(!silent) openModal('<h2>'+loc.name+'</h2><div class="msub">需求等级 '+loc.req+' · 你尚未达到</div>'
+      +'<div style="text-align:center;margin-top:8px;"><button class="btn" onclick="closeModal()">返回</button></div>');
+    return;
+  }
+  renderLocDetail(loc);
+}
+function renderLocDetail(loc){
+  const tags = [];
+  if(loc.elite) tags.push(IC.skull+' 精英：'+loc.elite.map(k=>MON[k].name).join('、')+'（遭遇概率 '+Math.round(loc.eliteChance*100)+'%）');
+  if(loc.boss)  tags.push(IC.skull+' 首领：'+((MON[loc.boss]&&MON[loc.boss].name)||loc.boss) + (loc.boss==='bloodlord'&&p.bloodlordDown?'（已讨伐）':''));
+  tags.push(IC.scroll+' 敌人可能成群出现 · 战后有机会触发奇遇');
+  let btns = '';
+  if(loc.id==='academy' && !p.cls){
+    btns = '<button class="btn primary" onclick="openClassModal()">'+IC.book+' 踏入学院 · 选择职业分支</button>';
+  } else {
+    btns = '<button class="btn primary" onclick="startBattle(\''+loc.id+'\',false)">遭遇战</button>';
+    if(loc.boss) btns += ' <button class="btn danger" onclick="startBattle(\''+loc.id+'\',true)">'+(loc.boss==='bloodlord'&&p.bloodlordDown?'再度挑战':'讨伐首领')+'</button>';
+  }
+  $('loc-detail').innerHTML =
+    '<h3><span style="color:'+TIER_COLOR[loc.tier]+'">'+IC.gem+'</span> '+loc.name
+    + ' <span style="font-size:12px;color:#8a8577;letter-spacing:1px;">危险度：'+TIER_TXT[loc.tier]+' · 需求等级 '+loc.req+'</span></h3>'
+    + '<div class="tags">'+tags.join('<br>')+'</div>'
+    + '<p>'+loc.desc+'</p>'
+    + '<div style="margin-top:12px;">'+btns+'</div>';
+}
+
+function usePotion(){
+  if(!p || (p.potions||0)<=0 || p.hp>=p.maxHp) return;
+  p.potions--;
+  p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp*0.4));
+  renderMap(); saveGame();
+}
+
+/* ================= 战斗 ================= */
+function makeMonster(key, tier){
+  const b = MON[key];
+  const ngm = 1 + 0.5*p.ng;
+  const maxHp = Math.round(b.hp*(1+0.18*(tier-1))*ngm);
+  let pattern = b.boss ? ['atk','atk','heavy','buff'] : b.elite ? ['atk','heavy','atk','buff'] : ['atk','atk','heavy'];
+  if(key==='lich') pattern = ['atk','atk','frost','buff'];
+  return { key, name:b.name, elite:!!b.elite, boss:!!b.boss,
+    maxHp, hp:maxHp,
+    atk:Math.round(b.atk*(1+0.12*(tier-1))*ngm),
+    xp:b.xp, drop:b.drop, relicChance:b.relic||0, potionChance:b.potion||0, talent:b.talent,
+    pattern, pi:0, block:0, turns:0, atkBuff:0, enraged:false, weakened:false };
+}
+
+function startBattle(locId, isBoss){
+  const loc = LOCS.find(l=>l.id===locId);
+  let keys = [];
+  if(isBoss){
+    keys = [loc.boss];
+  } else {
+    let first;
+    if(loc.elite && Math.random() < loc.eliteChance) first = loc.elite[Math.floor(Math.random()*loc.elite.length)];
+    else first = loc.pool[Math.floor(Math.random()*loc.pool.length)];
+    keys.push(first);
+    // 群敌概率：tier2+ 可能 2 只，tier4+ 可能 3 只；精英战 30% 带一名随从
+    let count = 1;
+    const roll = Math.random();
+    if(loc.tier>=4 && roll<0.10) count = 3;
+    else if(loc.tier>=2 && roll<0.25) count = 2;
+    if(MON[first].elite && loc.tier>=3 && Math.random()<0.3) count = Math.max(count, 2);
+    while(keys.length<count) keys.push(loc.pool[Math.floor(Math.random()*loc.pool.length)]);
+  }
+  B = { loc, enemies: keys.map(k=>makeMonster(k, loc.tier)), target:0,
+        turn:1, block:0, hand:[], over:false, lastDealt:0,
+        undying: bc('undying')>0, frostNext:0 };
+  // 开场格挡由 newTurn(true) 统一结算（圣骑士/铁壁/残破圣盾）
+  show('screen-battle');
+  $('blog').innerHTML = '';
+  log('<span class="turn">— 遭遇战 —</span>');
+  log('你遭遇了 '+B.enemies.map(m=>'<b>'+m.name+'</b>').join('、')+'。', 'sys');
+  B.enemies.forEach(m=>{ if(m.talent) log(m.name+' 的天赋 — '+m.talent, 'sys'); });
+  if(B.enemies.length>1) log('群敌环伺！点击敌人可切换攻击目标。','sys');
+  if(p.ng>0) log('第 '+(p.ng+1)+' 轮回的敌人更加凶悍。','sys');
+  newTurn(true);
+}
+
+function aliveEnemies(){ return B.enemies.filter(m=>m.hp>0); }
+function curTarget(){
+  let m = B.enemies[B.target];
+  if(!m || m.hp<=0){
+    const alive = aliveEnemies();
+    if(!alive) return null;
+    B.target = B.enemies.indexOf(alive[0]);
+    m = alive[0];
+  }
+  return m;
+}
+function selectTarget(i){
+  if(!B || B.over) return;
+  if(B.enemies[i] && B.enemies[i].hp>0){ B.target = i; renderBattle(); }
+}
+
+function energyMax(){ return 3 + bc('vigor') + (p.cls==='mage'?1:0); }
+function drawCount(){ return 4 + bc('insight') + (p.cls==='ranger'?1:0) + (B.turn===1?rc('boots'):0); }
+
+function newTurn(first){
+  if(B.over) return;
+  B.energy = energyMax() + (first ? 2*bc('first') : 0);
+  if(B.frostNext>0){ B.energy = Math.max(0, B.energy - 1); B.frostNext--; log('寒霜未散，本回合能量 -1。','sys'); }
+  B.block = 4*bc('bulwark') + 6*rc('shield') + (first && p.cls==='paladin'?10:0);
+  if(B.turn>1 && rc('pendant')){ heal(3*rc('pendant'),'生命吊坠'); }
+  genHand();
+  renderBattle();
+}
+
+function genHand(){
+  const pool = [];
+  p.weapons.forEach(w=>{
+    pool.push({ type:'atk', name:w.name+'·击', cost:1, dmg:w.atk + Math.floor(p.level*1.5), desc:'造成 '+(w.atk+Math.floor(p.level*1.5))+' 点基础伤害'+(w.eff?' · '+w.desc:'') });
+  });
+  if(p.cls){
+    const sk = CLASSES[p.cls].skill;
+    pool.push({ type:'skill', name:sk.name, cost:sk.cost, desc:sk.desc });
+  } else {
+    pool.push({ type:'atk', name:'重击', cost:2, dmg:Math.round(baseAtk()*1.6), desc:'造成攻击力 160% 的伤害' });
+  }
+  if(bc('flurry')) pool.push({ type:'atk', name:'乱舞', cost:1, dmg:Math.round(baseAtk()*0.8), desc:'乱舞祝福：造成攻击力 80% 的伤害' });
+  pool.push({ type:'blk', name:'格挡', cost:1, block:5+p.level, desc:'获得 '+(5+p.level)+' 点格挡' });
+  pool.push({ type:'blk', name:'格挡', cost:1, block:5+p.level, desc:'获得 '+(5+p.level)+' 点格挡' });
+  pool.push({ type:'blk', name:'铁壁', cost:2, block:12+p.level, desc:'获得 '+(12+p.level)+' 点格挡' });
+  B.hand = [];
+  const n = Math.min(drawCount(), pool.length);
+  for(let i=0;i<n;i++){
+    B.hand.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+  }
+}
+
+function intentInfo(m){
+  const intent = m.pattern[m.pi % m.pattern.length];
+  let atk = m.atk + m.atkBuff;
+  if(m.weakened) atk = Math.round(atk * 0.6);
+  if(m.key==='executioner' && p.hp < p.maxHp*0.3) atk = Math.round(atk * 1.5);
+  if(intent==='atk')   return { txt:IC.sword+' 攻击 · '+Math.round(atk)+' 伤害', cls:'' };
+  if(intent==='heavy') return { txt:IC.heavy+' 重击 · '+Math.round(atk*1.6)+' 伤害', cls:'pulse' };
+  if(intent==='buff')  return { txt:IC.shield+' 蓄力 · 下一轮攻势更凶猛', cls:'buff' };
+  if(intent==='frost') return { txt:IC.frost+' 寒霜新星 · 15 无视格挡伤害并冻结能量', cls:'frost pulse' };
+  return { txt:'', cls:'' };
+}
+
+function renderBattle(){
+  let eh = '';
+  B.enemies.forEach((m,i)=>{
+    const info = intentInfo(m);
+    let itxt = m.hp>0 ? info.txt : '已倒下';
+    if(m.key==='executioner' && p.hp < p.maxHp*0.3 && m.hp>0) itxt += '（处决加成中）';
+    if(m.weakened && m.hp>0) itxt += '（已被致残）';
+    const hpPct = Math.max(0, Math.round(m.hp/m.maxHp*100));
+    eh += '<div class="foe'+(i===B.target&&m.hp>0?' targeted':'')+(m.hp<=0?' dead':'')+'" onclick="selectTarget('+i+')">'
+      + '<div class="fname">'+m.name
+      + (m.boss?'<span class="etag boss">'+IC.skull+' 首领</span>':m.elite?'<span class="etag elite">'+IC.skull+' 精英</span>':'')
+      + (m.enraged?'<span class="etag rage">'+IC.rage+' 狂暴</span>':'')
+      + (m.weakened&&m.hp>0?'<span class="etag frost">'+IC.axe+' 被致残</span>':'')
+      + (m.hp>0 && B.enemies.length>1 && i===B.target?'<span class="etag" style="color:#c9a227;border-color:#6b5a2a;">'+IC.sword+' 目标</span>':'')
+      + '</div>'
+      + (m.talent?'<div class="etalent">天赋 — '+m.talent+'</div>':'')
+      + '<div class="bar-label"><span>生命</span><span>'+Math.max(0,m.hp)+' / '+m.maxHp+(m.block>0?'　·　格挡 '+m.block:'')+'</span></div>'
+      + '<div class="bar ehp'+(hpPct<35&&m.hp>0?' lowhp':'')+'"><div style="width:'+hpPct+'%"></div></div>'
+      + '<div style="margin-top:6px;"><span class="intent '+info.cls+'">'+itxt+'</span></div>'
+      + '</div>';
+  });
+  $('enemy-box').innerHTML = eh;
+
+  const phpPct = Math.max(0, Math.round(p.hp/p.maxHp*100));
+  const maxOrbs = Math.min(Math.max(energyMax(), B.energy), 12);
+  let orbs = '';
+  for(let i=0;i<maxOrbs;i++) orbs += '<span class="gem'+(i<B.energy?' full':'')+'"></span>';
+  $('player-box').innerHTML =
+    '<div class="ename" style="color:#d8c27a;">'+p.name+' <span style="font-size:12px;color:#8a8577;">Lv.'+p.level+(p.cls?' · '+CLASSES[p.cls].name:'')+'</span></div>'
+    + '<div class="bar-label"><span>生命</span><span>'+Math.max(0,p.hp)+' / '+p.maxHp+'</span></div>'
+    + '<div class="bar hp'+(phpPct<30?' lowhp':'')+'"><div style="width:'+phpPct+'%"></div></div>'
+    + '<div class="mini" style="margin-top:10px;">'
+    + '<span>'+orbs+' <b style="color:#8ec6dd;">'+B.energy+'</b> / '+energyMax()+'</span>'
+    + '<span class="blk-badge">'+IC.shield+' 格挡 '+B.block+'</span>'
+    + '<span class="turn-badge">回合 '+B.turn+'</span></div>'
+    + '<div style="font-size:11px;color:#5a564d;margin-top:6px;letter-spacing:1px;">格挡于回合开始重置 · 点击敌人切换目标</div>';
+
+  let hh = '';
+  B.hand.forEach((c,i)=>{
+    const ticon = c.type==='atk'?IC.sword : c.type==='blk'?IC.shield : IC.star;
+    hh += '<div class="card t-'+c.type+(c.cost>B.energy?' dead':'')+'" onclick="playCard('+i+')">'
+      + '<div class="cc">'+c.cost+'</div>'
+      + '<div class="ct">'+ticon+(c.type==='atk'?'攻 击':c.type==='blk'?'防 御':'技 能')+'</div>'
+      + '<div class="cn">'+c.name+'</div>'
+      + '<div class="cd">'+(c.desc||'')+'</div></div>';
+  });
+  if(!B.hand.length) hh = '<div class="mini" style="padding:20px;">手牌已尽，结束回合吧。</div>';
+  $('hand').innerHTML = hh;
+}
+
+function heal(n, src){
+  if(p.hp<=0 || n<=0) return;
+  const real = Math.min(n, p.maxHp-p.hp);
+  p.hp += real;
+  if(real>0){
+    log('恢复 <b class="heal">'+real+'</b> 点生命'+(src?'（'+src+'）':'')+'。','heal');
+    floatText('player-box','+'+real,'#8c8');
+    flash('player-box');
+  }
+}
+
+function dealToMonster(m, amount, canCrit, forceCrit){
+  let dmg = Math.round(amount * dmgMult());
+  if(m.elite||m.boss) dmg = Math.round(dmg * (1 + 0.20*bc('hunter')));
+  let isCrit = false;
+  const cc = forceCrit ? 1 : critChance();
+  if(canCrit && Math.random() < cc){ dmg *= 2; isCrit = true; }
+  const pierce = bc('pierce')>0 || hasWpnEff('pierce');
+  if(!pierce && m.block>0){
+    const absorbed = Math.min(m.block, dmg);
+    m.block -= absorbed; dmg -= absorbed;
+    if(absorbed>0) log(m.name+' 的格挡吸收了 '+absorbed+' 点伤害。');
+  }
+  m.hp -= dmg;
+  log((isCrit?'<b class="dmg">暴击！</b> ':'')+'对 '+m.name+' 造成 <b class="dmg">'+dmg+'</b> 点伤害。','dmg');
+  floatText('enemy-box','-'+dmg, isCrit?'#e7c65a':'#d88', isCrit);
+  shake('enemy-box');
+  const ls = lifesteal();
+  if(ls>0 && dmg>0) heal(Math.round(dmg*ls),'汲取');
+  if(bc('cripple')>0 && Math.random() < 0.20*bc('cripple') && m.hp>0){
+    m.weakened = true;
+    log(m.name+' 被你重创，下一次攻击伤害降低 40%。','sys');
+  }
+  if(m.key==='troll' && m.hp>0 && p.hp>0){
+    p.hp -= 3;
+    log('反震甲胄使你受到 <b class="dmg">3</b> 点反震伤害。','dmg');
+    if(p.hp<=0){ loseBattle(); return; }
+  }
+}
+
+function playCard(i){
+  if(!B || B.over) return;
+  const c = B.hand[i];
+  if(!c || c.cost>B.energy) return;
+  const m = curTarget();
+  if(!m) return;
+  B.energy -= c.cost;
+  B.hand.splice(i,1);
+  if(c.type==='blk'){
+    const blk = Math.round(c.block * (1 + 0.5*bc('fortress')));
+    B.block += blk;
+    log('架起架势，获得 <b>'+blk+'</b> 点格挡。');
+  } else if(c.type==='atk'){
+    dealToMonster(m, c.dmg, true, false);
+  } else if(c.type==='skill'){
+    const sk = CLASSES[p.cls].skill;
+    if(sk.heal){ heal(Math.round(p.maxHp*sk.heal), sk.name); }
+    else if(sk.hits){ for(let k=0;k<sk.hits;k++){ if(m.hp<=0) break; dealToMonster(m, baseAtk()*sk.mult, true, false); } }
+    else if(sk.flat){ dealToMonster(m, baseAtk()+sk.flat, true, false); }
+    else { dealToMonster(m, baseAtk()*sk.mult, true, !!sk.crit); }
+  }
+  renderBattle();
+  if(aliveEnemies().length===0) winBattle();
+}
+
+function endTurn(){
+  if(!B || B.over) return;
+  if(B.energy>0 && bc('aftershock')>0){
+    const m = curTarget();
+    if(m){
+      let d = Math.round(6*B.energy*bc('aftershock')*(1+0.15*bc('edge')));
+      if(m.block>0){ const a=Math.min(m.block,d); m.block-=a; d-=a; }
+      m.hp -= d;
+      log('余震激荡，对 '+m.name+' 造成 <b class="dmg">'+d+'</b> 点伤害。','dmg');
+      floatText('enemy-box','-'+d,'#c9a227');
+      renderBattle();
+      if(aliveEnemies().length===0){ winBattle(); return; }
+    }
+  }
+  monsterAct();
+  if(B.over) return;
+  B.turn++;
+  log('<span class="turn">— 第 '+B.turn+' 回合 —</span>');
+  newTurn(false);
+}
+
+function monsterAct(){
+  for(const m of B.enemies.slice()){
+    if(m.hp<=0) continue;
+    if(B.over) return;
+    m.turns++;
+    // 腐化祭司：腐蚀光环
+    if(m.key==='priest'){
+      p.hp -= 3;
+      log('腐蚀光环侵蚀了你，失去 <b class="dmg">3</b> 点生命。','dmg');
+      floatText('player-box','-3','#9a6ac9');
+      if(p.hp<=0){ loseBattle(); return; }
+    }
+    // 噬魂者
+    if(m.key==='soulreaver' && m.turns%3===0){
+      const steal = Math.max(3, Math.round(p.hp*0.06));
+      p.hp = Math.max(1, p.hp - steal);
+      m.hp = Math.min(m.maxHp, m.hp + steal);
+      log(m.name+' 吞噬了你的灵魂：失去 <b class="dmg">'+steal+'</b> 点生命，它恢复等量生命。','dmg');
+      floatText('player-box','-'+steal,'#9a6ac9');
+      floatText('enemy-box','+'+steal,'#8c8');
+    }
+    // 血月之主：血月节律
+    if(m.key==='bloodlord' && m.turns%3===0){
+      const h = Math.round(m.maxHp*0.10);
+      m.hp = Math.min(m.maxHp, m.hp+h);
+      log('血月低垂，'+m.name+' 汲取月华恢复 <b class="heal">'+h+'</b> 点生命。','heal');
+      hurtPlayer(12, true, '血月之噬');
+      if(B.over) return;
+    }
+    // 巫妖：寒霜新星
+    if(m.key==='lich' && m.turns%3===0){
+      B.frostNext = 1;
+      log(m.name+' 凝聚寒霜新星，空气凝结了。','sys');
+      hurtPlayer(15, true, '寒霜新星');
+      if(B.over) return;
+    }
+    // 黑风寨主：护体 + 狂暴
+    if(m.key==='chief'){
+      m.block += 12;
+      if(!m.enraged && m.hp < m.maxHp*0.35){
+        m.enraged = true; m.atkBuff += 6;
+        log(m.name+' 双目赤红，陷入狂暴！攻击力大幅提升。','sys');
+      }
+    }
+    // 血月之主二阶段
+    if(m.key==='bloodlord' && !m.enraged && m.hp < m.maxHp*0.5){
+      m.enraged = true; m.atkBuff += 8;
+      m.pattern = ['atk','heavy','atk','heavy','buff'];
+      log('血月加冕 — '+m.name+' 的攻势变得无法遏止。','sys');
+    }
+    // 铁血教头：战吼
+    if(m.key==='drillmaster' && m.turns%3===0){ m.atkBuff += 3; log(m.name+' 发出战吼，攻击力提高 3。','sys'); }
+
+    const intent = m.pattern[m.pi % m.pattern.length];
+    m.pi++;
+    if(intent==='buff'){ log(m.name+' 正在蓄力，下一轮攻势将更凶猛。','sys'); continue; }
+    if(intent==='frost'){ continue; }
+    let dmg = m.atk + m.atkBuff;
+    if(intent==='heavy') dmg = Math.round(dmg*1.6);
+    if(m.weakened){ dmg = Math.round(dmg*0.6); m.weakened = false; log(m.name+' 的伤势拖慢了它的攻势，伤害降低。','sys'); }
+    if(m.key==='executioner' && p.hp < p.maxHp*0.3){ dmg = Math.round(dmg*1.5); log('处决触发 — '+m.name+' 嗅到了血腥味。','sys'); }
+    hurtPlayer(dmg, false, m.name);
+    if(B.over) return;
+    const th = 5*bc('thorns');
+    if(th>0 && m.hp>0){ m.hp -= th; log('荆棘之躯反弹 <b class="dmg">'+th+'</b> 点伤害。','dmg'); }
+    if(m.key==='witch' && B.lastDealt>0){ const h=Math.round(B.lastDealt*0.3); m.hp=Math.min(m.maxHp,m.hp+h); log(m.name+' 汲取了 <b class="heal">'+h+'</b> 点生命。','heal'); }
+    if(aliveEnemies().length===0){ winBattle(); return; }
+  }
+  renderBattle();
+}
+
+function hurtPlayer(dmg, unblockable, src){
+  B.lastDealt = 0;
+  if(bc('ward')>0 && !unblockable){
+    const cap = Math.round(p.maxHp*0.3);
+    if(dmg>cap){ dmg=cap; log('守护之灵限制了这次伤害。','sys'); }
+  }
+  if(!unblockable && B.block>0){
+    const absorbed = Math.min(B.block, dmg);
+    B.block -= absorbed; dmg -= absorbed;
+    if(absorbed>0) log('格挡吸收了 '+absorbed+' 点伤害。');
+  }
+  if(dmg>0){
+    if(p.hp - dmg <= 0 && B.undying){
+      B.undying = false;
+      B.lastDealt = dmg; // 攻击实际命中，暗影女巫仍可汲取
+      p.hp = Math.min(p.maxHp, 1 + Math.round(p.maxHp*0.20));
+      log('<b class="heal">不灭之魂燃起 — 你在死亡边缘稳住了身形。</b>','heal');
+      flash('player-box');
+      renderBattle();
+      return;
+    }
+    p.hp -= dmg;
+    B.lastDealt = dmg;
+    log(src+' 对你造成 <b class="dmg">'+dmg+'</b> 点伤害。','dmg');
+    floatText('player-box','-'+dmg,'#d88');
+    shake('player-box');
+  }
+  renderBattle();
+  if(p.hp<=0) loseBattle();
+}
+
+function fleeBattle(){
+  if(!B || B.over) return;
+  B.over = true;
+  const loss = Math.max(1, Math.round(p.maxHp*0.10));
+  p.hp = Math.max(1, p.hp-loss);
+  saveGame();
+  openModal('<h2>撤 退</h2><div class="msub">你放弃了这场战斗，一无所获。</div>'
+    +'<div style="text-align:center;margin-top:8px;"><button class="btn primary" onclick="closeModal();toMap()">返回地图</button></div>');
+}
+
+/* ================= 胜利 / 死亡 ================= */
+function winBattle(){
+  if(B.over) return;
+  B.over = true;
+  const foes = B.enemies;
+  p.kills += foes.length;
+  log(foes.map(m=>m.name).join('、')+' 倒下了。','sys');
+  heal(Math.round(p.maxHp*0.15),'战后休整');
+  const mult = 1 + 0.2*rc('stone');
+  const gain = Math.round(foes.reduce((s,m)=>s+m.xp,0)*mult);
+  p.xp += gain;
+  let ups = 0;
+  while(p.xp >= xpNeed()){ p.xp -= xpNeed(); p.level++; p.maxHp += 6; p.hp += 6; ups++; }
+  p.pendingBless += ups;
+  if(bc('triumph')) heal(Math.round(p.maxHp*0.15*bc('triumph')),'愈战愈勇');
+
+  const hm = 1 + bc('harvest');
+  const bossKey = foes.find(m=>m.boss)?.key;
+  let reward = '<h2>胜 利</h2><div class="msub">'+foes.map(m=>m.name).join('、')+' 已被击败 · 获得经验 '+gain+'</div>';
+  if(ups>0) reward += '<p style="text-align:center;color:#c9a227;letter-spacing:2px;">'+IC.star+' 等级提升至 '+p.level+' 级 · 生命上限 +'+ups*6+'</p>';
+  const wdrop = [];
+  foes.forEach(m=>{ if(Math.random() < Math.min(1, m.drop*hm)){ const t = DROP_TABLE[B.loc.tier]; wdrop.push(t[Math.floor(Math.random()*t.length)]); } });
+  if(bossKey) wdrop.push(B.loc.tier>=5 ? (bossKey==='bloodlord'?'moon':'dragon') : 'knight');
+  let rdrop = null;
+  const relicFoe = foes.find(m=>m.relicChance);
+  if(p.level>=10 && relicFoe && Math.random() < Math.max(...foes.map(m=>m.relicChance||0))){
+    rdrop = RELICS[Math.floor(Math.random()*RELICS.length)];
+  }
+  let pdrop = 0;
+  foes.forEach(m=>{ if(Math.random() < Math.min(1, m.potionChance*hm)) pdrop++; });
+
+  window.__drops = { w:wdrop, r:rdrop, potion:pdrop, boss:!!bossKey, key:bossKey };
+  if(wdrop.length===0 && !rdrop && pdrop===0){
+    reward += '<div style="text-align:center;margin-top:16px;"><button class="btn primary" onclick="afterVictory()">继续</button></div>';
+    openModal(reward);
+  } else {
+    reward += '<div style="text-align:center;margin-top:16px;"><button class="btn primary" onclick="processDrops()">'+IC.gem+' 查看战利品</button></div>';
+    openModal(reward);
+  }
+}
+
+function processDrops(){
+  const d = window.__drops;
+  if(d.potion>0){
+    d.potion--;
+    p.potions++;
+    openModal('<h2>获得物品</h2><div class="msub">'+IC.potion+' 治疗药剂 · 可在地图上饮用，恢复 40% 生命</div>'
+      +'<div style="text-align:center;margin-top:8px;"><button class="btn primary" onclick="processDrops()">继续</button></div>');
+    return;
+  }
+  if(d.w && d.w.length){ offerWeapon(d.w[0]); return; }
+  if(d.r){ offerRelic(d.r); return; }
+  afterVictory();
+}
+
+function offerWeapon(wkey){
+  const w = WEAPONS[wkey];
+  const list = p.weapons.map((x,i)=>'<button class="btn" style="display:block;width:100%;margin:6px 0;" onclick="equipWeapon(\''+wkey+'\','+i+')">'+IC.sword+' 替换 ['+(i+1)+'] '+x.name+'（攻'+x.atk+(x.eff?' · '+x.desc:'')+'）</button>').join('');
+  openModal('<h2>获得武器</h2><div class="msub">'+IC.sword+' '+w.name+' · 攻 '+w.atk+(w.eff?' · '+w.desc:'')+'</div>'
+    +'<p style="font-size:13px;color:#9a958a;text-align:center;margin-bottom:14px;">'+(w.desc||'')+'</p>'
+    + (p.weapons.length < slots()
+        ? '<button class="btn primary" style="width:100%;margin-bottom:10px;" onclick="equipWeapon(\''+wkey+'\',-1)">装备至空栏位</button>'
+        : '<p style="font-size:12px;color:#8a8577;text-align:center;margin-bottom:8px;">武器栏已满（'+p.weapons.length+'/'+slots()+'），需替换一把武器：</p>'+list)
+    + '<button class="btn danger" style="width:100%;" onclick="dropWeapon(\''+wkey+'\')">弃置此武器</button>');
+}
+
+function equipWeapon(wkey, slot){
+  const w = { key:wkey, ...WEAPONS[wkey] };
+  if(slot<0 || slot>=p.weapons.length) p.weapons.push(w);
+  else p.weapons[slot] = w;
+  window.__drops.w.shift();
+  openModal('<h2>装 备</h2><div class="msub">'+IC.sword+' '+w.name+' 已就绪 · 攻 '+w.atk+'</div>'
+    +'<div style="text-align:center;margin-top:10px;"><button class="btn primary" onclick="processDrops()">继续</button></div>');
+}
+
+function dropWeapon(wkey){
+  window.__drops.w.shift();
+  openModal('<h2>弃 置</h2><div class="msub">你放弃了 '+WEAPONS[wkey].name+'。</div>'
+    +'<div style="text-align:center;margin-top:10px;"><button class="btn primary" onclick="processDrops()">继续</button></div>');
+}
+
+function offerRelic(r){
+  openModal('<h2>获得圣遗物</h2><div class="msub">'+IC.gem+' '+r.name+'</div>'
+    +'<p style="text-align:center;font-size:14px;color:#a8c080;letter-spacing:1px;margin-bottom:18px;">'+r.desc+'</p>'
+    +'<div style="text-align:center;"><button class="btn primary" onclick="takeRelic()">收下</button></div>');
+}
+
+function takeRelic(){
+  const r = window.__drops.r;
+  window.__drops.r = null;
+  if(r.id==='belt'){ p.maxHp += 30; p.hp += 30; }
+  p.relics.push(r);
+  processDrops();
+}
+
+function afterVictory(){
+  closeModal();
+  const d = window.__drops;
+  if(!d){ toMap(); return; }
+  if(d && d.key==='bloodlord' && !p.bloodlordDown){
+    p.bloodlordDown = true;
+    saveGame();
+    openModal('<h2>血 月 陨 落</h2><div class="msub">'+p.name+' 终结了血月之主 · 灰烬之路迎来黎明</div>'
+      +'<p style="text-align:center;font-size:14px;line-height:2.2;color:#b8b3a4;">'
+      +'等级 '+p.level+' · 击杀 '+p.kills+' · 祝福 '+Object.values(p.boons).reduce((a,b)=>a+b,0)+' · 圣遗物 '+p.relics.length+'</p>'
+      +'<div style="text-align:center;margin-top:14px;">'
+      +'<button class="btn primary" onclick="closeModal();openBoonModal()">接受血月的馈赠（额外一次祝福）</button> '
+      +'<button class="btn danger" onclick="closeModal();startNG()">进入下一轮回（敌人更强 · 等级保留 · 经验清零）</button> '
+      +'<button class="btn" onclick="closeModal();toMap()">继续游历</button></div>');
+    return;
+  }
+  // 旅途奇遇
+  if(!d.boss && Math.random() < 0.4){ triggerEvent(); return; }
+  continueAfterEvent();
+}
+function continueAfterEvent(){
+  toMap();
+}
+
+/* ================= 奇遇事件 ================= */
+function triggerEvent(){
+  let ev;
+  do { ev = EVENTS[Math.floor(Math.random()*EVENTS.length)]; } while(ev.id===lastEventId && EVENTS.length>1);
+  lastEventId = ev.id;
+  window.__ev = ev;
+  let h = '<h2>'+IC[ev.icon]+' '+ev.name+'</h2><div class="msub">旅途中的奇遇</div>'
+    +'<p style="text-align:center;font-size:14px;color:#b8b3a4;line-height:2;margin-bottom:18px;">'+ev.text+'</p>';
+  ev.choices.forEach((c,i)=>{
+    const ok = !c.cond || c.cond();
+    h += '<button class="btn" style="display:block;width:100%;margin:8px 0;'+(ok?'':'opacity:.35;')+'" '+(ok?'onclick="eventChoice('+i+')"':'disabled')+'>'+c.t+'</button>';
+  });
+  openModal(h);
+}
+function eventChoice(i){
+  const c = window.__ev.choices[i];
+  let msg;
+  try{ msg = c.fn() || '你做出了选择。'; }catch(e){ msg = '什么都没有发生。'; }
+  openModal('<h2>'+window.__ev.name+'</h2><div class="msub">'+msg+'</div>'
+    +'<div style="text-align:center;margin-top:14px;"><button class="btn primary" onclick="closeModal();continueAfterEvent()">继续</button></div>');
+}
+
+/* ================= 祝福 ================= */
+function openBoonModal(){
+  const picks = [];
+  const pool = BOONS.slice();
+  while(picks.length<3 && pool.length){
+    picks.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+  }
+  let h = '<h2>升 级 祝 福</h2><div class="msub">等级 '+p.level+' · 从下列祝福中择一'+(p.pendingBless>0?'（剩余 '+p.pendingBless+' 次选择）':'')+'</div><div class="boon-grid">';
+  picks.forEach(b=>{
+    h += '<div class="boon" onclick="pickBoon(\''+b.id+'\')"><h4>'+IC[b.icon]+' '+b.name+'</h4><p>'+b.desc+'</p>'
+      + (p.boons[b.id]?'<div class="cnt">已拥有 ×'+p.boons[b.id]+'，效果叠加</div>':'') + '</div>';
+  });
+  h += '</div>';
+  openModal(h);
+}
+function pickBoon(id){
+  grantBoon(id);
+  if(p.pendingBless>0) p.pendingBless--;
+  if(p.pendingBless>0){ openBoonModal(); return; }
+  closeModal();
+  toMap();
+}
+
+/* ================= 职业 ================= */
+function checkAcademy(){
+  if(p.level>=10 && !p.cls) openClassModal();
+}
+function openClassModal(){
+  if(p.cls){ renderMap(); return; }
+  let h = '<h2>职业学院 · 择定道途</h2><div class="msub">十级之礼 — 选择你的职业分支，此选择不可更改</div><div class="cls-grid">';
+  Object.keys(CLASSES).forEach(k=>{
+    const c = CLASSES[k];
+    h += '<div class="boon" onclick="pickClass(\''+k+'\')"><h4>'+IC[c.icon]+' '+c.name+'</h4><p style="margin-bottom:8px;">'+c.passive+'</p><p style="color:#7ab3c9;">技能牌 · '+c.skill.name+'（耗能'+c.skill.cost+'）：'+c.skill.desc+'</p></div>';
+  });
+  h += '</div>';
+  openModal(h);
+}
+function pickClass(k){
+  p.cls = k;
+  const c = CLASSES[k];
+  openModal('<h2>道途已定</h2><div class="msub">'+IC[c.icon]+' '+p.name+' 成为了'+c.name+'</div>'
+    +'<p style="font-size:13px;color:#9a958a;text-align:center;line-height:2;">'+c.passive+'<br>职业技能牌「'+c.skill.name+'」已加入你的手牌池。<br>圣遗物系统已解锁：精英与首领将有几率掉落圣遗物。</p>'
+    +'<div style="text-align:center;margin-top:16px;"><button class="btn primary" onclick="closeModal();toMap()">继续征程</button></div>');
+}
+
+/* ================= 死亡 / 轮回 ================= */
+function loseBattle(){
+  if(B.over) return;
+  B.over = true;
+  const hadBoons = Object.keys(p.boons).length>0;
+  if(p.level>=10){ p.boons = {}; p.pendingBless = 0; } // 死亡失去全部祝福（含未选取次数）
+  p.hp = 0; p.dead = true; // 死亡状态原样写入，由 continueGame 统一复活
+  saveGame();
+  openModal('<h2 style="color:#b03a2e;">你 死 了</h2>'
+    +'<div class="msub">'+B.enemies.filter(m=>m.hp>0).map(m=>m.name).join('、')+' 终结了这次冒险</div>'
+    +'<p style="text-align:center;font-size:14px;line-height:2.2;color:#b8b3a4;">'
+    +(p.level>=10
+      ? '你的等级已达 <b style="color:#c9a227;">'+p.level+'</b> 级 —— <b style="color:#c96a5a;">'+(hadBoons?'所有祝福尽数消散':'（你本就未拥有祝福）')+'</b>。'
+      : '你的等级不足 10 级 —— 依照灰烬之路的法则，<b style="color:#8c8;">祝福得以保留</b>。')
+    +'<br>等级、武器、圣遗物与职业得以保留。整顿之后，再次出发。</p>'
+    +'<div style="text-align:center;margin-top:18px;"><button class="btn primary" onclick="revive()">重整旗鼓</button></div>');
+}
+function revive(){
+  closeModal();
+  p.dead = false;
+  p.hp = p.maxHp;
+  toMap();
+}
+function startNG(){
+  p.ng++;
+  p.bloodlordDown = false;
+  p.xp = 0; // 经验清零，等级保留
+  p.hp = p.maxHp;
+  toMap();
+}
+</script>
+</body>
+</html>
