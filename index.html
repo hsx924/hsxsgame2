@@ -179,7 +179,12 @@
   @media (max-width:640px){ .boon-grid{grid-template-columns:1fr;} #battle-top{flex-direction:column;} }
   .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   .chip { border:1px solid #3a3e4c; border-radius:2px; padding:3px 10px; font-size:12px; color:#b8b3a4;
-    display:inline-flex; align-items:center; gap:5px; }
+    display:inline-flex; align-items:center; gap:5px; cursor:pointer; transition:all .15s; }
+  .chip:hover { border-color:var(--gold); color:#e0c568; }
+  .chip.curse { border-color:#6a2a3a; color:#c98a9a; }
+  .chip.curse:hover { border-color:#c96a5a; color:#e0a0a0; }
+  .chip.static { cursor:default; }
+  .chip.static:hover { border-color:#3a3e4c; color:#b8b3a4; }
   .chip.relic { border-color:#4a5a3a; color:#a8c080; }
   .chip.boon { border-color:#5a4a2a; color:#d8c27a; }
   .chip.wpn { border-color:#5a3a3a; color:#d8a898; }
@@ -214,6 +219,10 @@
     <div style="text-align:center;">
       <input type="text" id="inp-name" maxlength="10" placeholder="输入你的名字">
     </div>
+    <div style="margin-top:16px;text-align:center;">
+      <div style="font-size:12px;color:#8a8577;letter-spacing:3px;margin-bottom:8px;">选 择 难 度</div>
+      <div id="diff-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"></div>
+    </div>
     <div style="text-align:center;margin-top:18px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
       <button class="btn primary" style="padding:12px 40px;font-size:17px;" onclick="startGame()">踏上灰烬之路</button>
       <button class="btn" id="btn-continue" style="padding:12px 30px;font-size:15px;display:none;" onclick="continueGame()">继续旅程</button>
@@ -238,7 +247,7 @@
   <div class="panel" id="map-wrap"></div>
   <div class="panel" id="loc-detail"><div class="hint">在地图上选择一处地点</div></div>
   <p style="margin-top:16px;font-size:12px;color:#5a564d;letter-spacing:1px;line-height:1.9;">
-    规则：金色节点为已解锁之地，光晕标记为你当前的足迹；战斗中敌人可能成群出现，点击敌人可切换目标；胜利后有机会触发旅途奇遇；升级时从三个祝福中择一；10级解锁职业学院、职业分支与圣遗物；等级≥10时死亡将失去所有祝福。讨伐血月之主后可进入更凶险的轮回。
+    规则：金色节点为已解锁之地，光晕标记为你当前的足迹；战斗中敌人可能成群出现，点击敌人可切换目标；胜利后有机会触发旅途奇遇；升级时从三个祝福中择一；10级解锁职业学院、职业分支与圣遗物；等级≥10时死亡将失去所有祝福。讨伐血月之主后可进入更凶险的轮回（进度重置，祝福与圣遗物保留）；祝福、圣遗物、诅咒与武器均可点击查看详情；诅咒多来自黑暗契约与受诅宝箱，等级≥10 死亡会失去全部祝福与诅咒。
   </p>
 </div>
 
@@ -331,6 +340,14 @@ const BOONS = [
   { id:'harvest',   name:'丰饶',     desc:'敌人掉落武器与药剂的概率翻倍', icon:'gem' },
 ];
 
+const CURSES = [
+  { id:'weak',    name:'虚弱诅咒', desc:'全部伤害降低 12%', icon:'skull' },
+  { id:'rot',     name:'腐蚀诅咒', desc:'每回合开始失去 2 点生命（无视格挡）', icon:'rage' },
+  { id:'slow',    name:'迟缓诅咒', desc:'每回合抽牌数 -1', icon:'book' },
+  { id:'fragile', name:'脆弱诅咒', desc:'受到的伤害提高 15%', icon:'shield' },
+  { id:'bloodrage', name:'血怒诅咒', desc:'全部伤害提高 15%，但每回合开始失去 3 点生命', icon:'rage' },
+];
+
 const CLASSES = {
   warrior:{ name:'战士',   icon:'sword', passive:'狂怒：生命值低于 50% 时，伤害提高 40%',
     skill:{ name:'裂地斩', cost:3, desc:'造成相当于攻击力 220% 的伤害', mult:2.2 } },
@@ -356,6 +373,14 @@ const MON = {
   skeleton:  { name:'骷髅武士',   hp:92,  atk:16, xp:80,  drop:.22, potion:.12 },
   bloodfiend:{ name:'血奴',       hp:86,  atk:17, xp:84,  drop:.22, potion:.12 },
   golem:     { name:'石魔像',     hp:115, atk:15, xp:96,  drop:.25, potion:.12 },
+  prat:      { name:'瘟疫鼠',     hp:46,  atk:12, xp:42,  drop:.16, potion:.12 },
+  jackal:    { name:'豺狼',       hp:60,  atk:13, xp:56,  drop:.20, potion:.10 },
+  wraith:    { name:'幽影',       hp:78,  atk:15, xp:70,  drop:.20, potion:.10 },
+  gargoyle:  { name:'石像鬼',     hp:105, atk:16, xp:92,  drop:.24, potion:.12 },
+  plaguebringer:{ name:'瘟疫使者', hp:190, atk:18, xp:200, drop:.60, relic:.45, potion:.35, elite:true,
+    talent:'疫病光环：每回合开始时使你失去 2 点生命（无视格挡）' },
+  mirrorass: { name:'镜影刺客',   hp:175, atk:20, xp:210, drop:.60, relic:.45, potion:.35, elite:true,
+    talent:'镜之闪避：30% 概率完全闪避你的攻击' },
   executioner:{ name:'刽子手',    hp:135, atk:16, xp:140, drop:.60, relic:.4,  potion:.35, elite:true,
     talent:'处决：对生命值低于 30% 的目标造成的伤害提高 50%' },
   drillmaster:{ name:'铁血教头',  hp:170, atk:15, xp:160, drop:.60, relic:.4,  potion:.35, elite:true,
@@ -377,15 +402,15 @@ const MON = {
 };
 
 const LOCS = [
-  { id:'village',  name:'新手村',   req:1,  tier:1, x:90,  y:430, pool:['bandit','robber'],
+  { id:'village',  name:'新手村',   req:1,  tier:1, x:90,  y:430, pool:['bandit','robber','prat'],
     desc:'破败的村落。土匪与强盗在此劫掠路人，是磨练剑术的第一步。' },
-  { id:'wild',     name:'城郊荒原', req:3,  tier:2, x:215, y:350, pool:['robber','wolf','brigand','zombie'],
+  { id:'wild',     name:'城郊荒原', req:3,  tier:2, x:215, y:350, pool:['robber','wolf','brigand','zombie','jackal','prat'],
     desc:'废弃的农田与呼啸的野风。强盗结伙，野狼成群，腐尸自坟土中爬出。' },
-  { id:'forest',   name:'暗风林',   req:5,  tier:3, x:330, y:270, pool:['brigand','thief','zombie'],
+  { id:'forest',   name:'暗风林',   req:5,  tier:3, x:330, y:270, pool:['brigand','thief','zombie','wraith'],
     elite:['executioner'], eliteChance:.25,
     desc:'常年不见天日的黑林。传闻刽子手在此追猎迷途者。' },
-  { id:'swamp',    name:'毒蛇沼泽', req:5,  tier:3, x:345, y:415, pool:['spider','cultist','wolf'],
-    elite:['priest'], eliteChance:.22,
+  { id:'swamp',    name:'毒蛇沼泽', req:5,  tier:3, x:345, y:415, pool:['spider','cultist','wolf','jackal'],
+    elite:['priest','plaguebringer'], eliteChance:.28,
     desc:'毒雾弥漫的湿地。邪教徒在深处举行亵渎的仪式。' },
   { id:'mine',     name:'黑石矿洞', req:8,  tier:4, x:475, y:330, pool:['thief','brigand','golem'],
     elite:['drillmaster'], eliteChance:.3,
@@ -393,13 +418,13 @@ const LOCS = [
   { id:'academy',  name:'职业学院', req:10, tier:4, x:575, y:235, pool:['thief','cultist'],
     elite:['witch'], eliteChance:.35,
     desc:'十级方可踏入的古老学院。这里能择定你的职业分支，也潜藏被放逐的暗影女巫。' },
-  { id:'graveyard',name:'枯骨荒野', req:11, tier:4, x:665, y:350, pool:['zombie','skeleton','spider'],
-    elite:['soulreaver'], eliteChance:.3,
+  { id:'graveyard',name:'枯骨荒野', req:11, tier:4, x:665, y:350, pool:['zombie','skeleton','spider','wraith'],
+    elite:['soulreaver','mirrorass'], eliteChance:.3,
     desc:'一望无际的古战场。噬魂者在骸骨间游荡，吞噬残余的生者气息。' },
-  { id:'ruins',    name:'王城废墟', req:13, tier:5, x:775, y:270, pool:['skeleton','bloodfiend','golem'],
+  { id:'ruins',    name:'王城废墟', req:13, tier:5, x:775, y:270, pool:['skeleton','bloodfiend','golem','gargoyle'],
     elite:['executioner','drillmaster','troll'], eliteChance:.3, boss:'chief',
     desc:'倾颓的王城。黑风寨主盘踞于此，他的刀下没有活人。' },
-  { id:'tomb',     name:'亡者之墓', req:14, tier:5, x:790, y:400, pool:['skeleton','cultist'],
+  { id:'tomb',     name:'亡者之墓', req:14, tier:5, x:790, y:400, pool:['skeleton','cultist','gargoyle'],
     elite:['soulreaver','priest'], eliteChance:.4, boss:'lich',
     desc:'千年陵墓的入口。巫妖维克托在其中编织寒霜的死亡。' },
   { id:'altar',    name:'血月祭坛', req:16, tier:5, x:905, y:310, pool:['witch','bloodfiend'],
@@ -444,7 +469,10 @@ const EVENTS = [
           if(Math.random()<0.5){
             if(p.level>=10){ const r = RELICS[Math.floor(Math.random()*RELICS.length)]; if(r.id==='belt'){p.maxHp+=30;p.hp+=30;} p.relics.push(r); return '箱中躺着一件圣遗物：'+r.name+'。'; }
             else { p.potions++; return '箱中是一瓶完好的治疗药剂。'; }
-          } else { const d = Math.round(p.maxHp*0.12); p.hp = Math.max(1, p.hp-d); return '箱中喷出诅咒之火，你受到 '+d+' 点伤害。'; } } },
+          } else {
+            if(Math.random()<0.4){ const cid = randomCurseId(); grantCurse(cid); const c=CURSES.find(x=>x.id===cid); return '箱中涌出的黑雾缠上了你——'+c.name+'！'; }
+            const d = Math.round(p.maxHp*0.12); p.hp = Math.max(1, p.hp-d); return '箱中喷出诅咒之火，你受到 '+d+' 点伤害。';
+          } } },
       { t:'不去碰它', fn:()=>'你在荒野上学到的第一件事，就是离古怪的箱子远点。' } ] },
   { id:'obelisk', name:'古老方尖碑', icon:'book',
     text:'半截埋入土中的方尖碑，碑文记载着前人征伐的心得与临终的悔恨。',
@@ -465,6 +493,24 @@ const EVENTS = [
       { t:'浸泡（生命上限 -10，获得一个随机祝福）', cond:()=>p.maxHp>40,
         fn:()=>{ p.maxHp -= 10; if(p.hp>p.maxHp) p.hp = p.maxHp; grantBoon(randomBoonId()); return '灼热的血池侵蚀着你的生命，但力量随之而来。'; } },
       { t:'离开', fn:()=>'你盯着血池看了很久，终究没有下去。' } ] },
+  { id:'pact', name:'黑暗契约', icon:'skull',
+    text:'黑雾凝成一张羊皮纸契约，墨迹未干：「力量，以及代价。签名即可。」',
+    choices:[
+      { t:'签约：获得两个随机祝福，但缠身一个随机诅咒', fn:()=>{
+          grantBoon(randomBoonId()); grantBoon(randomBoonId());
+          const cid = randomCurseId(); grantCurse(cid);
+          const c = CURSES.find(x=>x.id===cid);
+          return '两股力量涌入体内，与此同时，'+c.name+'缠上了你的影子。'; } },
+      { t:'烧毁契约', fn:()=>'羊皮纸在火中卷曲发黑，黑雾发出不甘的嘶鸣。' } ] },
+  { id:'spring', name:'净化圣泉', icon:'cross',
+    text:'一泓清泉从发光的白石间涌出，水面漂着细碎的光。泉边石刻：涤罪之地。',
+    choices:[
+      { t:'沐浴圣泉：移除一个随机诅咒', cond:()=>(p.curses||[]).length>0, fn:()=>{
+          const idx = Math.floor(Math.random()*p.curses.length);
+          const cid = p.curses.splice(idx,1)[0];
+          const c = CURSES.find(x=>x.id===cid);
+          return '暖意流遍全身，'+c.name+'如烟般消散。'; } },
+      { t:'饮用泉水（恢复 35% 生命）', fn:()=>{ p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp*0.35)); return '泉水清冽甘甜，旅途的疲惫一扫而空。'; } } ] },
   { id:'shrine', name:'无名神龛', icon:'cross',
     text:'一座无名的神龛，龛中供着一柄锈蚀的短刀，刀柄上缠着褪色的红绳。',
     choices:[
@@ -475,6 +521,14 @@ const EVENTS = [
 let lastEventId = '';
 
 /* ================= 玩家 ================= */
+const DIFFS = {
+  normal:    { name:'标准', hp:1,   atk:1,   xp:1,   desc:'适合初访灰烬之路的旅人' },
+  hard:      { name:'困难', hp:1.3, atk:1.25,xp:1.2, desc:'敌人更加强壮凶悍，经验更丰厚' },
+  nightmare: { name:'噩梦', hp:1.7, atk:1.5, xp:1.5, desc:'每一步都可能是最后一步' },
+  ash:       { name:'灰烬', hp:2.2, atk:1.8, xp:2,   desc:'为历经轮回者准备的终末试炼' },
+};
+let selDiff = 'normal';
+
 const SAVE_KEY = 'ashen_path_save_v4';
 let p = null;
 let B = null;
@@ -484,19 +538,24 @@ function newPlayer(name){
   return { name, level:1, xp:0, hp:104, maxHp:104,
     weapons:[{ key:'iron', ...WEAPONS.iron }],
     relics:[], boons:{}, cls:null, pendingBless:0, kills:0,
-    potions:1, ng:0, bloodlordDown:false, dead:false };
+    potions:1, ng:0, bloodlordDown:false, dead:false, diff:'normal', curses:[] };
 }
 const xpNeed = () => p.level*45 + 55;
 const slots  = () => p.level>=10?4 : p.level>=7?3 : p.level>=4?2 : 1;
 const bc = id => p.boons[id]||0;
 const rc = id => p.relics.filter(r=>r.id===id).length;
 const hasWpnEff = eff => p.weapons.some(w=>w.eff===eff);
+const cc = id => (p.curses||[]).filter(c=>c===id).length; // 诅咒计数
+function grantCurse(id){ p.curses = p.curses||[]; p.curses.push(id); }
+function randomCurseId(){ return CURSES[Math.floor(Math.random()*CURSES.length)].id; }
 const baseAtk = () => p.weapons.reduce((s,w)=>s+w.atk,0) + p.level*2;
 function dmgMult(){
   let m = 1 + 0.15*bc('edge') + 0.15*rc('badge');
   m += 0.10 * p.weapons.filter(w=>w.eff==='might').length;
   if(p.cls==='warrior' && p.hp < p.maxHp*0.5) m *= 1.4;
   if(bc('laststand') && p.hp < p.maxHp*0.3) m *= 1 + 0.30*bc('laststand');
+  m *= 1 - 0.12*cc('weak');
+  m *= 1 + 0.15*cc('bloodrage');
   return m;
 }
 function lifesteal(){
@@ -562,6 +621,7 @@ setInterval(spawnEmber, 380);
 function startGame(){
   const name = $('inp-name').value.trim() || '无名者';
   p = newPlayer(name);
+  p.diff = selDiff;
   clearSave();
   toMap();
 }
@@ -578,7 +638,19 @@ function abandonRun(){
     +'<div style="text-align:center;"><button class="btn danger" onclick="clearSave();location.reload()">确认放弃</button> '
     +'<button class="btn" onclick="closeModal()">再想想</button></div>');
 }
+function renderDiffRow(){
+  let h = '';
+  Object.keys(DIFFS).forEach(k=>{
+    const d = DIFFS[k];
+    const on = selDiff===k;
+    h += '<button class="btn" style="padding:7px 16px;font-size:13px;'+(on?'border-color:#c9a227;color:#e7c65a;background:linear-gradient(180deg,#4a3a12,#33290c);':'')+'" '
+      + 'onclick="pickDiff(\''+k+'\')" title="'+d.desc+'">'+d.name+'</button>';
+  });
+  $('diff-row').innerHTML = h;
+}
+function pickDiff(k){ selDiff = k; renderDiffRow(); }
 document.addEventListener('DOMContentLoaded', ()=>{
+  renderDiffRow();
   $('inp-name').focus();
   const s = loadGame();
   if(s && s.name){ $('btn-continue').style.display='inline-flex'; $('btn-continue').innerHTML=IC.gem+' 继续旅程 · '+s.name+' Lv.'+s.level+(s.ng>0?' · 轮回'+s.ng:''); }
@@ -605,19 +677,37 @@ function renderMap(){
   h += '<span>暴击 <b>'+Math.round(critChance()*100)+'%</b></span>';
   h += '<span>武器栏 <b>'+p.weapons.length+' / '+slots()+'</b></span>';
   h += '<span>药剂 <b>'+(p.potions||0)+'</b></span>';
+  h += '<span>难度 <b style="color:#c96a5a;">'+DIFFS[p.diff||'normal'].name+'</b></span>';
   if(p.cls) h += '<span>职业 <b>'+CLASSES[p.cls].name+'</b></span>';
   h += '<span>击杀 <b>'+p.kills+'</b></span>';
   if(p.bloodlordDown) h += '<span style="color:#c9a227;">'+IC.star+' 血月已陨落</span>';
   $('statline').innerHTML = h;
 
   let chips = '';
-  p.weapons.forEach((w,i)=> chips += '<span class="chip wpn">'+IC.sword+' ['+(i+1)+'] '+w.name+' · 攻'+w.atk+(w.eff?' · '+w.desc:'')+(w.honed?' ·精磨×'+w.honed:'')+'</span>');
-  p.relics.forEach(r=> chips += '<span class="chip relic">'+IC.gem+' 圣遗物 · '+r.name+'（'+r.desc+'）</span>');
+  p.weapons.forEach((w,i)=> chips += '<span class="chip wpn" onclick="openInfo(\'wpn\','+i+')">'+IC.sword+' ['+(i+1)+'] '+w.name+' · 攻'+w.atk+(w.eff?' · '+w.desc:'')+(w.honed?' ·精磨×'+w.honed:'')+'</span>');
+  const relicIds = [...new Set(p.relics.map(r=>r.id))]; // 按种类去重，数量以 ×N 标注
+  relicIds.forEach(rid=>{
+    const r = RELICS.find(x=>x.id===rid) || p.relics.find(x=>x.id===rid);
+    if(!r) return;
+    const n = p.relics.filter(x=>x.id===rid).length;
+    chips += '<span class="chip relic" onclick="openInfo(\'relic\',\''+rid+'\')">'+IC.gem+' 圣遗物 · '+r.name+(n>1?' ×'+n:'')+'</span>';
+  });
   Object.keys(p.boons).forEach(id=>{
     const b = BOONS.find(x=>x.id===id);
-    chips += '<span class="chip boon">'+IC.star+' 祝福 · '+b.name+(p.boons[id]>1?' ×'+p.boons[id]:'')+'</span>';
+    const n = p.boons[id];
+    if(!b || !(n>0)) return; // 过滤无效条目与 0 计数
+    chips += '<span class="chip boon" onclick="openInfo(\'boon\',\''+id+'\')">'+IC[b.icon]+' 祝福 · '+b.name+(n>1?' ×'+n:'')+'</span>';
   });
-  $('chip-line').innerHTML = chips || '<span class="chip" style="color:#5a564d;">尚无祝福与圣遗物</span>';
+  const curseIds = [...new Set(p.curses||[])]; // 按种类去重
+  curseIds.forEach(cid=>{
+    const c = CURSES.find(x=>x.id===cid);
+    if(c) chips += '<span class="chip curse" onclick="openInfo(\'curse\',\''+cid+'\')">'+IC[c.icon]+' '+c.name+(cc(cid)>1?' ×'+cc(cid):'')+'</span>';
+  });
+  if(p.cls){
+    const cl = CLASSES[p.cls];
+    chips += '<span class="chip" style="border-color:#3a5a6a;color:#8ec6dd;" onclick="openInfo(\'cls\',\'\')">'+IC[cl.icon]+' 职业 · '+cl.name+'</span>';
+  }
+  $('chip-line').innerHTML = chips || '<span class="chip static" style="color:#5a564d;">尚无祝福、圣遗物与诅咒</span>';
 
   const pb = $('btn-potion');
   pb.innerHTML = IC.potion+' 饮用治疗药剂（'+(p.potions||0)+'）· 恢复 40% 生命';
@@ -692,6 +782,19 @@ function renderLocDetail(loc){
     + '<div style="margin-top:12px;">'+btns+'</div>';
 }
 
+function openInfo(kind, key){
+  let title='', desc='', icon='star', extra='';
+  if(kind==='boon'){ const b=BOONS.find(x=>x.id===key); title=b.name; desc=b.desc; icon=b.icon; extra='祝福 · 已叠加 ×'+(p.boons[key]||1); }
+  if(kind==='relic'){ const r=RELICS.find(x=>x.id===key); title=r.name; desc=r.desc; icon=r.icon; extra='圣遗物 · 持有 ×'+p.relics.filter(x=>x.id===key).length; }
+  if(kind==='curse'){ const c=CURSES.find(x=>x.id===key); title=c.name; desc=c.desc; icon=c.icon; extra='诅咒 · 缠身 ×'+cc(key)+' · 等级≥10 死亡或净化圣泉可解除'; }
+  if(kind==='wpn'){ const w=p.weapons[key]; title=w.name; icon='sword'; extra='武器栏 ['+(key+1)+']';
+    desc='攻击力 '+w.atk+(w.eff?'，'+w.desc:'')+(w.honed?'，精磨 ×'+w.honed+'（攻+'+(3*w.honed)+'）':'')+'。'; }
+  if(kind==='cls'){ const c=CLASSES[p.cls]; title=c.name; icon=c.icon; extra='职业 · 道途已定，不可更改';
+    desc=c.passive+'。技能牌「'+c.skill.name+'」（耗能 '+c.skill.cost+'）：'+c.skill.desc; }
+  openModal('<h2>'+IC[icon]+' '+title+'</h2><div class="msub">'+extra+'</div>'
+    +'<p style="text-align:center;font-size:14px;color:#b8b3a4;line-height:2;margin-bottom:16px;">'+desc+'</p>'
+    +'<div style="text-align:center;"><button class="btn" onclick="closeModal()">关闭</button></div>');
+}
 function usePotion(){
   if(!p || (p.potions||0)<=0 || p.hp>=p.maxHp) return;
   p.potions--;
@@ -702,13 +805,15 @@ function usePotion(){
 /* ================= 战斗 ================= */
 function makeMonster(key, tier){
   const b = MON[key];
-  const ngm = 1 + 0.5*p.ng;
+  const diff = DIFFS[p.diff||'normal'];
+  const ngm = (1 + 0.5*p.ng) * diff.hp;
+  const atkm = (1 + 0.5*p.ng) * diff.atk;
   const maxHp = Math.round(b.hp*(1+0.18*(tier-1))*ngm);
   let pattern = b.boss ? ['atk','atk','heavy','buff'] : b.elite ? ['atk','heavy','atk','buff'] : ['atk','atk','heavy'];
   if(key==='lich') pattern = ['atk','atk','frost','buff'];
   return { key, name:b.name, elite:!!b.elite, boss:!!b.boss,
     maxHp, hp:maxHp,
-    atk:Math.round(b.atk*(1+0.12*(tier-1))*ngm),
+    atk:Math.round(b.atk*(1+0.12*(tier-1))*atkm),
     xp:b.xp, drop:b.drop, relicChance:b.relic||0, potionChance:b.potion||0, talent:b.talent,
     pattern, pi:0, block:0, turns:0, atkBuff:0, enraged:false, weakened:false };
 }
@@ -762,7 +867,7 @@ function selectTarget(i){
 }
 
 function energyMax(){ return 3 + bc('vigor') + (p.cls==='mage'?1:0); }
-function drawCount(){ return 4 + bc('insight') + (p.cls==='ranger'?1:0) + (B.turn===1?rc('boots'):0); }
+function drawCount(){ return Math.max(1, 4 + bc('insight') + (p.cls==='ranger'?1:0) + (B.turn===1?rc('boots'):0) - cc('slow')); }
 
 function newTurn(first){
   if(B.over) return;
@@ -770,6 +875,15 @@ function newTurn(first){
   if(B.frostNext>0){ B.energy = Math.max(0, B.energy - 1); B.frostNext--; log('寒霜未散，本回合能量 -1。','sys'); }
   B.block = 4*bc('bulwark') + 6*rc('shield') + (first && p.cls==='paladin'?10:0);
   if(B.turn>1 && rc('pendant')){ heal(3*rc('pendant'),'生命吊坠'); }
+  if(B.turn>1){
+    const rotDmg = 2*cc('rot') + 3*cc('bloodrage');
+    if(rotDmg>0){
+      p.hp -= rotDmg;
+      log('诅咒侵蚀着你，失去 <b class="dmg">'+rotDmg+'</b> 点生命。','dmg');
+      floatText('player-box','-'+rotDmg,'#c98a9a');
+      if(p.hp<=0){ loseBattle(); return; }
+    }
+  }
   genHand();
   renderBattle();
 }
@@ -870,6 +984,11 @@ function heal(n, src){
 }
 
 function dealToMonster(m, amount, canCrit, forceCrit){
+  if(m.key==='mirrorass' && m.hp>0 && Math.random()<0.3){
+    log(m.name+' 化作镜影，完全闪避了你的攻击。','sys');
+    floatText('enemy-box','闪避','#8ec6dd');
+    return;
+  }
   let dmg = Math.round(amount * dmgMult());
   if(m.elite||m.boss) dmg = Math.round(dmg * (1 + 0.20*bc('hunter')));
   let isCrit = false;
@@ -956,6 +1075,13 @@ function monsterAct(){
       floatText('player-box','-3','#9a6ac9');
       if(p.hp<=0){ loseBattle(); return; }
     }
+    // 瘟疫使者：疫病光环
+    if(m.key==='plaguebringer'){
+      p.hp -= 2;
+      log('疫病光环缠绕着你，失去 <b class="dmg">2</b> 点生命。','dmg');
+      floatText('player-box','-2','#8a9a4a');
+      if(p.hp<=0){ loseBattle(); return; }
+    }
     // 噬魂者
     if(m.key==='soulreaver' && m.turns%3===0){
       const steal = Math.max(3, Math.round(p.hp*0.06));
@@ -1026,6 +1152,7 @@ function hurtPlayer(dmg, unblockable, src){
     B.block -= absorbed; dmg -= absorbed;
     if(absorbed>0) log('格挡吸收了 '+absorbed+' 点伤害。');
   }
+  if(dmg>0 && cc('fragile')>0) dmg = Math.round(dmg * (1 + 0.15*cc('fragile')));
   if(dmg>0){
     if(p.hp - dmg <= 0 && B.undying){
       B.undying = false;
@@ -1065,7 +1192,7 @@ function winBattle(){
   log(foes.map(m=>m.name).join('、')+' 倒下了。','sys');
   heal(Math.round(p.maxHp*0.15),'战后休整');
   const mult = 1 + 0.2*rc('stone');
-  const gain = Math.round(foes.reduce((s,m)=>s+m.xp,0)*mult);
+  const gain = Math.round(foes.reduce((s,m)=>s+m.xp,0)*mult*(DIFFS[p.diff||'normal'].xp));
   p.xp += gain;
   let ups = 0;
   while(p.xp >= xpNeed()){ p.xp -= xpNeed(); p.level++; p.maxHp += 6; p.hp += 6; ups++; }
@@ -1163,7 +1290,7 @@ function afterVictory(){
       +'等级 '+p.level+' · 击杀 '+p.kills+' · 祝福 '+Object.values(p.boons).reduce((a,b)=>a+b,0)+' · 圣遗物 '+p.relics.length+'</p>'
       +'<div style="text-align:center;margin-top:14px;">'
       +'<button class="btn primary" onclick="closeModal();openBoonModal()">接受血月的馈赠（额外一次祝福）</button> '
-      +'<button class="btn danger" onclick="closeModal();startNG()">进入下一轮回（敌人更强 · 等级保留 · 经验清零）</button> '
+      +'<button class="btn danger" onclick="closeModal();openNGModal()">进入下一轮回（重置进度 · 保留祝福与圣遗物）</button> '
       +'<button class="btn" onclick="closeModal();toMap()">继续游历</button></div>');
     return;
   }
@@ -1247,7 +1374,7 @@ function loseBattle(){
   if(B.over) return;
   B.over = true;
   const hadBoons = Object.keys(p.boons).length>0;
-  if(p.level>=10){ p.boons = {}; p.pendingBless = 0; } // 死亡失去全部祝福（含未选取次数）
+  if(p.level>=10){ p.boons = {}; p.pendingBless = 0; p.curses = []; } // 死亡失去全部祝福与诅咒（含未选取次数）
   p.hp = 0; p.dead = true; // 死亡状态原样写入，由 continueGame 统一复活
   saveGame();
   openModal('<h2 style="color:#b03a2e;">你 死 了</h2>'
@@ -1265,11 +1392,37 @@ function revive(){
   p.hp = p.maxHp;
   toMap();
 }
+function openNGModal(){
+  let h = '<h2>踏 入 轮 回</h2><div class="msub">第 '+(p.ng+2)+' 轮回 — 进度将重置，祝福、圣遗物与职业保留</div>'
+    +'<p style="text-align:center;font-size:13px;color:#9a958a;line-height:2;margin-bottom:14px;">'
+    +'重置：等级回到 1 · 经验清零 · 武器回到铁剑 · 地图重新封锁<br>'
+    +'保留：全部祝福 · 全部圣遗物 · 职业技能 · 击杀数<br>'
+    +'敌人强度 +50%（与难度叠加）</p>';
+  Object.keys(DIFFS).forEach(k=>{
+    const d = DIFFS[k];
+    h += '<button class="btn" style="display:block;width:100%;margin:7px 0;" onclick="pickNGDiff(\''+k+'\')">'+d.name+' · '+d.desc+'</button>';
+  });
+  h += '<div style="text-align:center;margin-top:8px;"><button class="btn" onclick="closeModal()">再想想</button></div>';
+  openModal(h);
+}
+function pickNGDiff(k){
+  p.diff = k;
+  startNG();
+}
 function startNG(){
   p.ng++;
   p.bloodlordDown = false;
-  p.xp = 0; // 经验清零，等级保留
+  p.dead = false;
+  // 重置进度：等级/经验/武器/药剂，地图随等级重新封锁
+  p.level = 1;
+  p.xp = 0;
+  p.pendingBless = 0;
+  p.weapons = [{ key:'iron', ...WEAPONS.iron }];
+  p.potions = 1;
+  // 生命上限按祝福与圣遗物重算
+  p.maxHp = 104 + 20*bc('tough') + 30*rc('belt');
   p.hp = p.maxHp;
+  saveGame();
   toMap();
 }
 </script>
